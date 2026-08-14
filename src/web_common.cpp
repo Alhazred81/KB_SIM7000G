@@ -24,3 +24,38 @@ String diagDump() {
 
   return out;
 }
+
+String htmlEscape(const String& in) {
+  String out; out.reserve(in.length());
+  for(size_t i=0;i<in.length();i++){
+    char c = in[i];
+    switch(c){
+      case '<':  out += "&lt;";   break;
+      case '>':  out += "&gt;";   break;
+      case '&':  out += "&amp;";  break;
+      case '"':  out += "&quot;"; break;
+      case '\'': out += "&#39;";  break;
+      default:
+        if((uint8_t)c >= 0x20 && (uint8_t)c < 0x7F) out += c;
+        break;
+    }
+  }
+  return out;
+}
+
+String jsEscape(const String& in) {
+  String out; out.reserve(in.length());
+  for(size_t i=0;i<in.length();i++){
+    char c = in[i];
+    switch(c){
+      case '"':  out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n";  break;
+      case '\r': break;
+      default:
+        if((uint8_t)c >= 0x20 && (uint8_t)c < 0x7F) out += c;
+        break;
+    }
+  }
+  return out;
+}
