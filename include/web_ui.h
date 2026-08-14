@@ -199,21 +199,6 @@ String stateRow(const String& key, const String& val, const String& cls="") {
   return s;
 }
 
-String satText(int value) {
-  return value >= 0 ? String(value) : "n/a";
-}
-
-String satRow(const String& systemName, int count) {
-  return stateRow(systemName, satText(count));
-}
-
-String ageText(unsigned long stamp) {
-  if(stamp == 0) return "meg nem";
-  unsigned long s = (millis() - stamp) / 1000UL;
-  if(s < 60) return String(s) + " s";
-  return String(s / 60) + " p " + String(s % 60) + " s";
-}
-
 String sensorRowHtml(const String& sensorKey, const String& label, bool enabled,
                       bool hasEverRead, bool isOk, const String& valueText,
                       const String& pinInfo = "") {
@@ -2044,4 +2029,7 @@ void webBegin() {
   server.onNotFound(handleNotFound);
   server.begin();
   Serial.println(F("[WEB] Szerver OK, port 80"));
+}
+String satRow(const String& systemName, int count) {
+  return stateRow(systemName, satText(count));
 }

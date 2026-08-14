@@ -59,3 +59,14 @@ String jsEscape(const String& in) {
   }
   return out;
 }
+
+String satText(int value) {
+  return value >= 0 ? String(value) : "n/a";
+}
+
+String ageText(unsigned long stamp) {
+  if(stamp == 0) return "meg nem";
+  unsigned long s = (millis() - stamp) / 1000UL;
+  if(s < 60) return String(s) + " s";
+  return String(s / 60) + " p " + String(s % 60) + " s";
+}
