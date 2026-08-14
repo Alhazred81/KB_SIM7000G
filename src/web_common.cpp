@@ -70,3 +70,11 @@ String ageText(unsigned long stamp) {
   if(s < 60) return String(s) + " s";
   return String(s / 60) + " p " + String(s % 60) + " s";
 }
+
+String sigBar(int q) {
+  if(q==99||q==0) return "<span style='color:var(--err)'>Nincs jel</span>";
+  int pct = (q*100)/31;
+  String col = (q>=15?"var(--ok)":q>=7?"var(--warn)":"var(--err)");
+  String s = String("<span style='color:")+col+"'>"+String(q)+"/31 ("+String(pct)+"%)</span>";
+  return s;
+}
