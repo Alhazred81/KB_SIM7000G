@@ -28,3 +28,7 @@ String normalizeAtCommand(String cmd);
 
 
 String smartErrorBox(const String& err);
+
+String htmlEscape(const String& in);
+
+String jsEscape(const String& in);
