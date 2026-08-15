@@ -47,3 +47,5 @@ size_t base64Decode(const String& in, uint8_t* buf, size_t maxLen);
 
 String phoneInputBlock(const String& btnId,
                        const String& prefix = "num");
+
+String smartErrorBox(const String& err);

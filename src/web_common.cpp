@@ -195,3 +195,32 @@ String phoneInputBlock(const String& btnId, const String& prefix) {
   "}</script>";
   return h;
 }
+
+String smartErrorBox(const String& err) {
+  if(err.length() == 0) return "";
+
+  String target = "";       
+  String actionLabel = "";  
+
+  if(err.indexOf("PIN") >= 0 || err.indexOf("SIM hiba") >= 0 ||
+     err.indexOf("PUK") >= 0 || err.indexOf("nincs mentve") >= 0) {
+    target = "/cfg";
+    actionLabel = "Ugras a PIN beallitasahoz &#8250;";
+  } else if(err.indexOf("halozat") >= 0 || err.indexOf("Halozat") >= 0 ||
+            err.indexOf("antenna") >= 0 || err.indexOf("jel") >= 0) {
+    target = "/diag";
+    actionLabel = "Diagnosztika megnyitasa &#8250;";
+  }
+
+  String box = "<div class='msg err'";
+  if(target.length()) box += " style='cursor:pointer' onclick=\"location.href='" + target + "'\"";
+  box += ">";
+  box += err;
+  if(target.length()) {
+    box += "<div style='margin-top:6px;font-weight:700;text-decoration:underline'>";
+    box += actionLabel;
+    box += "</div>";
+  }
+  box += "</div>";
+  return box;
+}
