@@ -791,6 +791,7 @@ void handleExpertReset() {
   server.send(302);
 }
 
+
 String windSpeedValueText() {
   if(!gWindSpeed.enabled) return "";
   if(!gWindSpeed.lastReadOk && gWindSpeed.lastGoodRead == 0) return "";
@@ -833,6 +834,8 @@ String ltrValueText() {
 void handleSensors() {
   String html = htmlHead("Szenzorok", "7");
   html += "<h1>Szenzorok</h1>";
+
+
 
   html += "<div class='card wide'><h2>Allapot</h2>";
   html += sensorRowHtml("windspeed", "Szelsebesseg", gWindSpeed.enabled,
