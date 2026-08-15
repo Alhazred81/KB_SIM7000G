@@ -78,3 +78,4 @@ String sigBar(int q) {
   String s = String("<span style='color:")+col+"'>"+String(q)+"/31 ("+String(pct)+"%)</span>";
   return s;
 }
+

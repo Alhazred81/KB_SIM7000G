@@ -33,3 +33,8 @@ String jsEscape(const String& in);
 String satText(int value);
 String ageText(unsigned long stamp);
 
+String modemBusyReason();
+
+bool sendModemBusyPage(const String& title,
+                       const String& active,
+                       const String& backUrl);

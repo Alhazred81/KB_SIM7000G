@@ -223,8 +223,6 @@ String sensorRowHtml(const String& sensorKey, const String& label, bool enabled,
   h += "</span></div>";
   return h;
 }
-
-
 String modemBusyReason() {
   if(gModemInitRequested || gModem.initInProgress) return "Modem inicializalas folyamatban, varj amig befejezodik.";
   if(gSmsSendRequested || gSmsSendInProgress) return "SMS kuldes folyamatban, kozben a modem soros portja foglalt.";
@@ -245,7 +243,6 @@ bool sendModemBusyPage(const String& title, const String& active, const String& 
   server.send(200, "text/html", html);
   return true;
 }
-
 String normalizeAtCommand(String cmd) {
   cmd.trim();
   if(cmd.length() == 0) return "AT";
