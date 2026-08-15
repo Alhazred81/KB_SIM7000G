@@ -157,37 +157,6 @@ void handleCss() {
   server.send_P(200, "text/css", CSS);
 }
 
-String htmlHead(const String& title, const String& active) {
-  String h = F("<!DOCTYPE html><html lang='hu'><head>"
-    "<meta charset='UTF-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<meta name='theme-color' content='#0d0d1a'>"
-    "<meta name='apple-mobile-web-app-capable' content='yes'>"
-    "<title>");
-  h += title;
-  h += F("</title>"
-    "<link rel='stylesheet' href='/s.css'>"
-    "</head><body>"
-    "<nav>"
-    "<a href='/' id='n1'>&#127968; F&#337;oldal</a>"
-    "<a href='/comm' id='n2'>&#128172; Komm.</a>"
-    "<a href='/gnss' id='n6'>&#128752; GPS</a>"
-    "<a href='/sensors' id='n7'>&#127777; Szenzor</a>"
-    "<a href='/expert' id='n8'>&#9889; Expert</a>"
-    "<a href='/cfg' id='n4'>&#9881; Konfig</a>"
-    "<a href='/diag' id='n5'>&#128202; Diag</a>"
-    "</nav>"
-    "<div class='wrap'>"
-    "<script>document.getElementById('n");
-  h += active;
-  h += F("').className='on';</script>");
-  return h;
-}
-
-String htmlFoot() {
-  return "</div></body></html>";
-}
-
 String stateRow(const String& key, const String& val, const String& cls="") {
   String s = "<div class='row'><span class='k'>";
   s += key;
@@ -827,12 +796,7 @@ String windSpeedValueText() {
   if(!gWindSpeed.lastReadOk && gWindSpeed.lastGoodRead == 0) return "";
   return String(gWindSpeed.speedMs, 1) + " m/s";
 }
-String compassAbbrev(float deg) {
-  const char* dirs[] = {"E","EK","K","DK","D","DNy","Ny","ENy"};
-  int idx = (int)((deg + 22.5f) / 45.0f) % 8;
-  if(idx < 0) idx += 8;
-  return String(dirs[idx]);
-}
+
 String windDirValueText() {
   if(!gWindDir.enabled) return "";
   if(!gWindDir.lastReadOk && gWindDir.lastGoodRead == 0) return "";
@@ -998,16 +962,6 @@ void handleSensToggle() {
   saveSensorConfig();
   diagAdd("Szenzor '" + key + "': " + (on ? "bekapcsolva" : "kikapcsolva"));
   server.send(200, "text/plain", "ok");
-}
-
-String sensStatusJsonEntry(const String& key, bool enabled, bool hasEverRead, bool ok, const String& value) {
-  String j = "\"" + key + "\":{";
-  j += "\"enabled\":" + String(enabled ? "true" : "false") + ",";
-  j += "\"hasEverRead\":" + String(hasEverRead ? "true" : "false") + ",";
-  j += "\"ok\":" + String(ok ? "true" : "false") + ",";
-  j += "\"value\":\"" + jsEscape(value) + "\"";
-  j += "}";
-  return j;
 }
 
 void handleSensStatus() {

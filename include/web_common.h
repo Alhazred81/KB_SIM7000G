@@ -49,3 +49,13 @@ String phoneInputBlock(const String& btnId,
                        const String& prefix = "num");
 
 String smartErrorBox(const String& err);
+String compassAbbrev(float deg);
+
+String sensStatusJsonEntry(const String& key,
+                           bool enabled,
+                           bool hasEverRead,
+                           bool ok,
+                           const String& value);
+
+String htmlHead(const String& title, const String& active);
+String htmlFoot();
