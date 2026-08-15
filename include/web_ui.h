@@ -301,46 +301,6 @@ void refreshAtStatusSnapshot() {
   gAtStatusInProgress = false;
 }
 
-String phoneInputBlock(const String& btnId, const String& prefix = "num") {
-  String fmtId = prefix + "Fmt";
-  String hiddenId = prefix + "Hidden";
-  String hintId = prefix + "Hint";
-  String h = "<label>Telefonszam</label>"
-    "<div style='display:flex;gap:6px;align-items:center'>"
-    "<span style='background:#0a0a18;border:1px solid var(--border);border-radius:10px;"
-    "padding:10px 10px;font-size:14px;color:var(--txt2);white-space:nowrap'>+36</span>"
-    "<input type='text' id='" + fmtId + "' inputmode='numeric' placeholder='30 123 4567' "
-    "maxlength='12' oninput='fmtNum_" + prefix + "(this)' autocomplete='tel-national' style='flex:1'>"
-    "</div>"
-    "<input type='hidden' name='num' id='" + hiddenId + "'>"
-    "<div class='hint' id='" + hintId + "'>Add meg a szamot ekezet es +36 nelkul, pl. 30 123 4567</div>";
-  h += "<script>function fmtNum_" + prefix + "(el){"
-    "var digits = el.value.replace(/\\D/g,'').substring(0,9);"
-    "var out = '';"
-    "if(digits.length>0) out += digits.substring(0,2);"
-    "if(digits.length>2)  out += ' ' + digits.substring(2,5);"
-    "if(digits.length>5)  out += ' ' + digits.substring(5,9);"
-    "el.value = out;"
-    "document.getElementById('" + hiddenId + "').value = '+36' + digits;"
-    "var hint = document.getElementById('" + hintId + "');"
-    "var btn  = document.getElementById('" + btnId + "');"
-    "if(digits.length === 9){"
-      "hint.style.color='var(--ok)';"
-      "hint.innerText='+36 ' + out + ' - rendben';"
-      "if(btn) btn.disabled = false;"
-    "} else {"
-      "hint.style.color='var(--txt3)';"
-      "hint.innerText='Meg ' + (9-digits.length) + ' szamjegy hianyzik.';"
-      "if(btn) btn.disabled = true;"
-    "}"
-  "}"
-  "function prepNum_" + prefix + "(){"
-    "var digits = document.getElementById('" + fmtId + "').value.replace(/\\D/g,'');"
-    "return digits.length === 9;"
-  "}</script>";
-  return h;
-}
-
 String smartErrorBox(const String& err) {
   if(err.length() == 0) return "";
 

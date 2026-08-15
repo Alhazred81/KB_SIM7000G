@@ -44,3 +44,6 @@ int base64DecodeChar(char c);
 String base64Encode(const uint8_t* data, size_t len);
 
 size_t base64Decode(const String& in, uint8_t* buf, size_t maxLen);
+
+String phoneInputBlock(const String& btnId,
+                       const String& prefix = "num");
