@@ -25,8 +25,6 @@ bool sendModemBusyPage(const String& title,
                        const String& backUrl);
 
 String normalizeAtCommand(String cmd);
-
-
 String smartErrorBox(const String& err);
 String htmlEscape(const String& in);
 String jsEscape(const String& in);
@@ -38,3 +36,11 @@ String modemBusyReason();
 bool sendModemBusyPage(const String& title,
                        const String& active,
                        const String& backUrl);
+
+String normalizeAtCommand(String cmd);
+
+int base64DecodeChar(char c);
+
+String base64Encode(const uint8_t* data, size_t len);
+
+size_t base64Decode(const String& in, uint8_t* buf, size_t maxLen);
