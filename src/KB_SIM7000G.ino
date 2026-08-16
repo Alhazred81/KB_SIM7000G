@@ -11,7 +11,6 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
-
 #include "config.h"
 #include "crypto.h"
 #include "time_mgr.h"
@@ -30,7 +29,6 @@ DNSServer      dnsServer;
 ModemState     gModem;
 LedConfig      gLed;
 GnssState      gGnss;
-TimeState      gTime;
 WifiStaState   gSta;
 DataConnState  gData;
 WindSpeedState gWindSpeed;

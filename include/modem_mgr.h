@@ -1199,7 +1199,3 @@ void ledSetAuto() {
   gLed.triggerOn = false;
   Serial.println(F("[LED] Vissza automatikus villogo modba."));
 }
-
-inline bool modemSetTimeFromSystem() {
-  return false;
-}
