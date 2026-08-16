@@ -1,3 +1,5 @@
+//config.h
+
 #pragma once
 
 // ─── Pinout (TTGO T-SIM7000G) ───────────────────────────────
