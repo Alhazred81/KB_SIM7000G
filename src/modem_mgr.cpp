@@ -292,10 +292,18 @@ bool modemInit() {
   // CLCC URC engedélyezése (hívás státusz)
   modemSerial.println("AT+CLCC=1");
   delay(200);
-  // SMS szoveges mod
-  modem.sendAT("+CMGF=1"); modem.waitResponse();
-  // Bejovo SMS URC engedelyezese: +CMTI:"SM",<index> minden uj uzenetnel
-  modem.sendAT("+CNMI=2,1,0,0,0"); modem.waitResponse();
+ // SMS szoveges mod
+modem.sendAT("+CMGF=1");
+modem.waitResponse();
+
+// Telekom Domino + SIM7000G:
+// SMS kuldes csak CS utvonalon mukodik stabilan.
+modem.sendAT("+CGSMS=1");
+modem.waitResponse();
+
+// Bejovo SMS URC engedelyezese
+modem.sendAT("+CNMI=2,1,0,0,0");
+modem.waitResponse();
 
   gModem.initInProgress = false;
   gModem.initPhase = "Kesz - csatlakozva";
@@ -440,9 +448,23 @@ String sendSMS(const String& number, const String& text) {
     return "A modem nem adott '>' SMS promptot. Ez gyakran halozati/SIM/SMSC gond. Valasz: " + resp + " " + signalHint();
   }
 
+  Serial.println("[SMS-TEXT] [" + text + "]");
+
   modemSerial.print(text);
-  modemSerial.write((char)26);
-  resp = modemReadUntilFinal(60000);
+modemSerial.write((char)26);
+
+delay(5000);
+
+String raw = "";
+while (modemSerial.available()) {
+  raw += (char)modemSerial.read();
+}
+
+Serial.println("======== SMS RAW ========");
+Serial.println(raw);
+Serial.println("=========================");
+resp = raw;
+  //resp = modemReadUntilFinal(60000);
   Serial.println("[SMS] Vegso modem valasz -> " + resp);
 
   if(resp.indexOf("OK") >= 0 || resp.indexOf("+CMGS:") >= 0) {

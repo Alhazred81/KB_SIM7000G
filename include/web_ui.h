@@ -1437,6 +1437,18 @@ void handleDiag() {
   String html = htmlHead("Diagnosztika", "5");
   html += "<h1>Diagnosztika</h1>";
 
+html += "<script>"
+        "function copyElement(id){"
+          "var e=document.getElementById(id);"
+          "if(!e)return;"
+          "window.getSelection().removeAllRanges();"
+          "var r=document.createRange();"
+          "r.selectNodeContents(e);"
+          "window.getSelection().addRange(r);"
+          "alert('A szoveg ki lett jelolve. Most nyomj egy Ctrl+C-t vagy a tablet masolas menujet.');"
+        "}"
+        "</script>";
+        
   html += "<div class='card'><h2>Rendszer</h2>";
   html += stateRow("Free heap", String(ESP.getFreeHeap()/1024)+" KB");
   html += stateRow("Uptime", String(millis()/60000)+" perc");
@@ -1457,7 +1469,7 @@ void handleDiag() {
     html += "</div>";
   }
 
-  html += "<div class='card diag-card'><h2>Esemenyek <button class='sec' style='padding:4px 8px;font-size:11px;float:right;margin-top:-2px' onclick='navigator.clipboard.writeText(document.getElementById(\"diagBox\").innerText);alert(\"Napló a vágólapra másolva!\")'>Másolás</button></h2>";
+  html += "<div class='card diag-card'><h2>Esemenyek <button class='sec' style='padding:4px 8px;font-size:11px;float:right;margin-top:-2px' onclick='copyElement(\"diagBox\",\"Naplo a vagolapra masolva!\")'>Másolás</button></h2>";
   html += "<div class='diag' id='diagBox'>";
   String log = diagDump();
   if(log.length()==0) log = "(meg nincs esemeny)";
@@ -1482,7 +1494,7 @@ void handleDiag() {
           "<button class='sec' type='button' onclick='sendAtCmd()' style='width:120px;margin-top:0'>Küldés</button>"
           "</div>"
           "<div id='atResultCard' style='display:none;margin-top:10px'>"
-          "<label>Válasz <button class='sec' style='padding:2px 6px;font-size:10px;float:right;margin-top:-2px' onclick='navigator.clipboard.writeText(document.getElementById(\"atResultBox\").innerText);alert(\"Válasz a vágólapra másolva!\")'>Másolás</button></label>"
+          "<label>Válasz <button class='sec' style='padding:2px 6px;font-size:10px;float:right;margin-top:-2px' onclick='copyElement(\"atResultBox\")'>Másolás</button></label>"
           "<div class='diag' id='atResultBox'></div>"
           "</div>"
           "<script>"
@@ -1508,11 +1520,18 @@ void handleDiag() {
   if(gAtStatusSnapshotAt > 0) html += "<div class='hint'>Legutobbi snapshot: " + ageText(gAtStatusSnapshotAt) + "</div>";
   html += "</div>";
 
-  if(gAtStatusSnapshot.length() > 0) {
-    html += "<div class='card diag-card'><h2>Legutobbi AT allapot snapshot</h2><div class='diag'>";
-    html += htmlEscape(gAtStatusSnapshot);
-    html += "</div></div>";
-  }
+if(gAtStatusSnapshot.length() > 0) {
+  html += "<div class='card diag-card'>"
+          "<h2>Legutobbi AT allapot snapshot "
+          "<button class='sec' "
+          "style='padding:4px 8px;font-size:11px;float:right;margin-top:-2px' "
+          "onclick='copyElement(\"atSnapshotBox\")'>"
+          "Masolas</button></h2>";
+
+  html += "<div class='diag' id='atSnapshotBox'>";
+  html += htmlEscape(gAtStatusSnapshot);
+  html += "</div></div>";
+}
 
   html += "<form action='/reinit' method='POST'>"
           "<button class='warn'>Modem ujraindit</button></form>";
