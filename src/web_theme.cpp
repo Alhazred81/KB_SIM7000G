@@ -118,3 +118,11 @@ select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--bo
 .netname{font-size:13px;color:var(--txt);overflow-wrap:anywhere}
 .netmeta{font-size:11px;color:var(--txt2);white-space:nowrap}
 )css";
+
+extern WebServer server;
+
+void handleCss() {
+  server.sendHeader("Cache-Control", "public, max-age=86400");
+  server.sendHeader("Content-Type", "text/css");
+  server.send_P(200, "text/css", CSS);
+}

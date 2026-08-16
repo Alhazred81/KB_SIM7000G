@@ -33,13 +33,6 @@ extern bool          gAtStatusInProgress;
 extern String        gAtStatusSnapshot;
 extern unsigned long gAtStatusSnapshotAt;
 
-
-void handleCss() {
-  server.sendHeader("Cache-Control", "public, max-age=86400");
-  server.sendHeader("Content-Type",  "text/css");
-  server.send_P(200, "text/css", CSS);
-}
-
 String stateRow(const String& key, const String& val, const String& cls="") {
   String s = "<div class='row'><span class='k'>";
   s += key;
