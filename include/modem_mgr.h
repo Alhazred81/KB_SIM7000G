@@ -5,7 +5,8 @@
 #include "config.h"
 #include "crypto.h"
 #include "modem_utils.h"
-#include "modem_types.h"  
+#include "modem_types.h"
+#include "NtfyClient.h" 
 #include "time_mgr.h"
 
 #define TINY_GSM_MODEM_SIM7000
@@ -15,14 +16,17 @@
 
 extern HardwareSerial modemSerial;
 extern TinyGsm modem;
-// A .ino-ban definialt, halasztott muveletek allapotjelzoi - a
-// smsInboxLoop()-nak tudnia kell, hogy epp fut-e mas blokkolo
-// AT-tranzakcio, hogy ne akarjon egyszerre olvasni a soros portrol.
+
 extern bool gSmsSendRequested;
 extern bool gSmsSendInProgress;
 extern bool gModemInitRequested;
 
 extern ModemState gModem;
+
+// ─── AT állapot és snapshot változók ────────────────────────
+extern bool gAtStatusInProgress;
+extern String gAtStatusSnapshot;
+extern unsigned long gAtStatusSnapshotAt;
 
 // ─── Serial log ─────────────────────────────────────────────
 #define MLOG(x)   Serial.println(F("[MODEM] " x))
@@ -37,6 +41,10 @@ String bestAvailableTimestamp();
 void updateModemStats();
 bool modemInit();
 
+// ─── AT kommunikáció és diagnosztika ────────────────────────
+String modemAtQuery(const String& cmd, unsigned long timeoutMs = 1200);
+void refreshAtStatusSnapshot();
+
 struct DataConnState {
   bool active = false;
   String ip = "";
@@ -48,6 +56,9 @@ struct DataConnState {
   String pingResult = "";
   bool pingOk = false;
 };
+
+String modemApplyExpertConfig(const String& cnmp, const String& cgsms, const String& bands, const String& cmnb);
+void modemResetExpertConfig();
 
 extern DataConnState gData;
 

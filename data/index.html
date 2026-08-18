@@ -1,31 +1,127 @@
 <!doctype html>
 <html lang="hu">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0d0d1a" />
-    <title>KB SIM7000G - Főoldal</title>
-    <link rel="stylesheet" href="/s.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kaptármonitor - MIR KÖZPONT</title>
+    <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <nav>
-      <a href="/" class="on">&#127968; Főoldal</a>
-      <a href="/comm">&#128172; Komm.</a>
-      <a href="/gnss">&#128640; GPS</a>
-      <a href="/sensors">&#127777; Szenzor</a>
-      <a href="/cfg">&#9881; Konfig</a>
-      <a href="/expert">&#9888; Expert</a>
-      <a href="/diag">&#128269; Diag</a>
-    </nav>
-
     <div class="wrap">
-      <h1>Rendszer Állapot (Élő)</h1>
+      <h1>🐝 Kaptármonitor & MIR Rendszer</h1>
 
-      <div id="status">
-        <div style="text-align: center; padding: 20px; color: var(--txt2)">
-          <div style="font-size: 24px; margin-bottom: 10px">⏳</div>
-          Adatok lekérése az ESP32-ről...
+      <!-- Státusz Kártya -->
+      <div class="card" id="statusCard">
+        <h2>Modem & Hálózat</h2>
+        <div id="status">Állapot betöltése...</div>
+      </div>
+
+      <!-- Mesterterv / Naptár Kártya -->
+      <div class="card wide">
+        <h2>📅 Anyanevelési Mesterterv (Naptár)</h2>
+        <div
+          id="calendar"
+          style="
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            text-align: center;
+            font-size: 12px;
+          "
+        >
+          <div style="font-weight: bold; color: var(--accent)">H</div>
+          <div style="font-weight: bold; color: var(--accent)">K</div>
+          <div style="font-weight: bold; color: var(--accent)">Sze</div>
+          <div style="font-weight: bold; color: var(--accent)">Cs</div>
+          <div style="font-weight: bold; color: var(--accent)">P</div>
+          <div style="font-weight: bold; color: var(--accent)">Szo</div>
+          <div style="font-weight: bold; color: var(--accent)">V</div>
+          <!-- Statikus/Dinamikus napok bemutató rácsa -->
+          <div
+            style="
+              background: #141428;
+              padding: 8px;
+              border-radius: 4px;
+              opacity: 0.4;
+            "
+          >
+            28
+          </div>
+          <div
+            style="
+              background: #141428;
+              padding: 8px;
+              border-radius: 4px;
+              opacity: 0.4;
+            "
+          >
+            29
+          </div>
+          <div
+            style="
+              background: #141428;
+              padding: 8px;
+              border-radius: 4px;
+              opacity: 0.4;
+            "
+          >
+            30
+          </div>
+          <div
+            style="
+              background: var(--accent);
+              color: #fff;
+              padding: 8px;
+              border-radius: 4px;
+              font-weight: bold;
+            "
+          >
+            1<br /><span style="font-size: 9px">Átvétel</span>
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            2
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            3
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            4
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            5
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            6
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            7
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            8
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            9
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            10
+          </div>
+          <div style="background: #141428; padding: 8px; border-radius: 4px">
+            11
+          </div>
         </div>
+        <div class="hint" style="margin-top: 8px">
+          Petés anyanevelési ütemezés aktiválva.
+        </div>
+      </div>
+
+      <!-- Navigációs Menü Sáv -->
+      <div class="card wide" style="text-align: center">
+        <a href="/gsm"><button class="sec">📞 GSM / SMS</button></a>
+        <a href="/iot"><button class="sec">🌐 Internet / IoT</button></a>
+        <a href="/gnss"><button class="sec">🛰️ MIR Műhold</button></a>
+        <a href="/sensors"><button class="sec">🌡️ Szenzorok</button></a>
+        <a href="/cfg"><button class="sec">⚙️ Beállítások</button></a>
+        <a href="/diag"><button class="sec">📊 Diagnosztika</button></a>
       </div>
     </div>
 

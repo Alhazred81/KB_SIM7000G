@@ -1,6 +1,32 @@
 //ntfyclient.cpp
 
 #include "NtfyClient.h"
+#include <LittleFS.h>
+
+String gNtfyServer = "ntfy.sh";
+String gNtfyTopic = "kaptar_alap";
+
+void loadNtfyConfig() {
+  if (LittleFS.exists("/ntfy.cfg")) {
+    File f = LittleFS.open("/ntfy.cfg", "r");
+    if (f) {
+      gNtfyServer = f.readStringUntil('\n'); gNtfyServer.trim();
+      gNtfyTopic = f.readStringUntil('\n');  gNtfyTopic.trim();
+      f.close();
+    }
+  }
+}
+
+void saveNtfyConfig(const String& server, const String& topic) {
+  gNtfyServer = server;
+  gNtfyTopic = topic;
+  File f = LittleFS.open("/ntfy.cfg", "w");
+  if (f) {
+    f.println(gNtfyServer);
+    f.println(gNtfyTopic);
+    f.close();
+  }
+}
 
 NtfyClient::NtfyClient(Stream& modemStream, const char* defaultTopic, const char* server)
     : _modem(modemStream), _defaultTopic(defaultTopic ? defaultTopic : ""), _server(server), _lastHttpCode(0), _dbgStream(nullptr) {}

@@ -244,33 +244,3 @@ String sensStatusJsonEntry(const String& key, bool enabled, bool hasEverRead, bo
   return j;
 }
 
-String htmlHead(const String& title, const String& active) {
-  String h = F("<!DOCTYPE html><html lang='hu'><head>"
-    "<meta charset='UTF-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<meta name='theme-color' content='#0d0d1a'>"
-    "<meta name='apple-mobile-web-app-capable' content='yes'>"
-    "<title>");
-  h += title;
-  h += F("</title>"
-    "<link rel='stylesheet' href='/s.css'>"
-    "</head><body>"
-    "<nav>"
-    "<a href='/' id='n1'>&#127968; F&#337;oldal</a>"
-    "<a href='/comm' id='n2'>&#128172; Komm.</a>"
-    "<a href='/gnss' id='n6'>&#128752; GPS</a>"
-    "<a href='/sensors' id='n7'>&#127777; Szenzor</a>"
-    "<a href='/expert' id='n8'>&#9889; Expert</a>"
-    "<a href='/cfg' id='n4'>&#9881; Konfig</a>"
-    "<a href='/diag' id='n5'>&#128202; Diag</a>"
-    "</nav>"
-    "<div class='wrap'>"
-    "<script>document.getElementById('n");
-  h += active;
-  h += F("').className='on';</script>");
-  return h;
-}
-
-String htmlFoot() {
-  return "</div></body></html>";
-}

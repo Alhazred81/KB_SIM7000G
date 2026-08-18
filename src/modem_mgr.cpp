@@ -580,46 +580,113 @@ void monitorCall() {
   }
 }
 
+// Explicit hivatkozás a diagnosztikai naplózóra
+extern void diagAdd(const String& msg);
+
 String dataConnEnable() {
-  if(!gModem.ready) return "A modem nincs inicializalva.";
+  MLOG("Adatkapcsolat bekapcsolasa inditva...");
+  if (!gModem.ready) {
+    MLOG("Hiba: Modem nincs kesz.");
+    return "Modem nincs kesz.";
+  }
+  
   gData.inProgress = true;
+  gData.lastError = "";
+  
+  MLOG("Korabbi PDP kontextus lezarasa (gprsDisconnect)...");
+  modem.gprsDisconnect();
+  delay(500);
+  
+  MLOG("Csatlakozas az APN-hez (internet)...");
+  bool success = modem.gprsConnect("internet", "", "");
 
-  modemDrain();
-  modemSerial.println("AT+CNACT=1,0");
-  modemReadUntilFinal(1000);
-  modemSerial.println("AT+CGDCONT=1,\"IP\",\"internet\"");
-  modemReadUntilFinal(1500);
-  modemSerial.println("AT+CGATT=1");
-  modemReadUntilFinal(2000);
-
-  modemSerial.println("AT+CNACT=1,1");
-  String resp = modemReadUntilFinal(10000);
+  if (!success) {
+    MLOG("Hiba: Adatkapcsolat felépítése sikertelen.");
+    gData.lastError = "Adatkapcsolat sikertelen. (Idotullepes)";
+    gData.active = false;
+  } else {
+    gData.ip = modem.localIP().toString();
+    gData.active = true;
+    MLOGv("Adatkapcsolat sikeresen felepitve. IP: " + gData.ip);
+    diagAdd("Adatkapcsolat felepitve. IP: " + gData.ip);
+  }
+  
   gData.inProgress = false;
+  return gData.lastError;
+}
 
-  if(resp.indexOf("OK") < 0 && resp.indexOf("+CNACT:") < 0) {
-    gData.lastError = "Adatkapcsolat bekapcsolasa sikertelen. Modem valasz: " + resp;
-    return gData.lastError;
+String dataConnPing(const String& targetIp) {
+  MLOGv("Ping teszt inditva cel: " + targetIp);
+  gData.pingInProgress = true;
+  gData.pingTarget = targetIp;
+  gData.pingResult = "";
+  gData.pingOk = false;
+
+  if (!gData.active) {
+    MLOG("Hiba: Nincs aktiv adatkapcsolat a pinghez.");
+    gData.pingResult = "Nincs adatkapcsolat.";
+    gData.pingInProgress = false;
+    return gData.pingResult;
   }
 
-  delay(500); yield();
-
-  // IP cim lekerdezese megerositeskent
-  modemDrain();
-  modemSerial.println("AT+CNACT?");
-  String ipResp = modemReadUntilFinal(3000);
-  int p = ipResp.indexOf("+CNACT:");
-  if(p >= 0) {
-    int q1 = ipResp.indexOf('"', p);
-    int q2 = (q1 >= 0) ? ipResp.indexOf('"', q1 + 1) : -1;
-    if(q1 >= 0 && q2 > q1) {
-      gData.ip = ipResp.substring(q1 + 1, q2);
+  MLOG("ICMP csomag kuldese (AT+SNPING4)...");
+  
+  // Tiszta puffer
+  modem.streamClear();
+  
+  // Kiválasztjuk a hálózati profilt (a TinyGSM a SIM7000-nél az 1-es profilt, vagy a 0-st használja)
+  // Próbáljuk beállítani a profilt. Ha hibát ad, nem gond, megyünk tovább.
+  modem.sendAT("+SNPDPID=1");
+  modem.waitResponse(1000L); 
+  
+  // Parancs: AT+SNPING4="ip",1,32,5000 
+  // (1 db ping, 32 byte adat, 5000ms = 5 sec timeout)
+  modem.sendAT("+SNPING4=\"" + targetIp + "\",1,32,5000");
+  
+  // Várjuk a parancs nyugtázását ("OK")
+  if (modem.waitResponse(2000L) != 1) {
+    // Ha nem fogadta el, próbáljuk meg a 0-s profillal!
+    modem.sendAT("+SNPDPID=0");
+    modem.waitResponse(1000L);
+    modem.sendAT("+SNPING4=\"" + targetIp + "\",1,32,5000");
+    
+    if (modem.waitResponse(2000L) != 1) {
+      gData.pingResult = "Parancs hiba (AT+SNPING4 nem tamogatott?)";
+      MLOGv(gData.pingResult);
+      gData.pingInProgress = false;
+      return gData.pingResult;
     }
   }
 
-  gData.active = true;
-  gData.lastError = "";
-  Serial.println("[DATA] Adatkapcsolat aktiv, IP: " + gData.ip);
-  return "";
+  // Várunk a modem aszinkron válaszára, ami a "+SNPING4: " felirattal érkezik (max 6 sec)
+  if (modem.waitResponse(6000L, "+SNPING4: ") == 1) {
+    String resp = modem.stream.readStringUntil('\n');
+    resp.trim();
+    MLOGv("Ping nyers valasz: " + resp);
+    
+    // A válasz formátuma sikeres esetben: 1,8.8.8.8,124 (a 124 a válaszidő ms-ban)
+    // Hiba esetén általában: 1,8.8.8.8,ERR vagy timeout
+    if (resp.indexOf("ERR") == -1 && resp.length() > 5) {
+       gData.pingOk = true;
+       // Kinyerjük az utolsó számot (a válaszidőt) a szebb kiíratáshoz
+       int lastComma = resp.lastIndexOf(',');
+       if(lastComma > 0 && lastComma < (int)resp.length() - 1) {
+           String timeStr = resp.substring(lastComma + 1);
+           gData.pingResult = "Sikeres: " + timeStr + " ms";
+       } else {
+           gData.pingResult = "Sikeres! Nyers adat: " + resp;
+       }
+    } else {
+       gData.pingResult = "Sikertelen vagy blokkolt (Timeout)";
+    }
+  } else {
+    gData.pingResult = "Sikertelen (Nincs valasz a halozattol)";
+    MLOG("Ping sikertelen (Idotullepes)");
+  }
+
+  diagAdd("Ping " + targetIp + " -> " + gData.pingResult);
+  gData.pingInProgress = false;
+  return gData.pingResult;
 }
 
 // ─── Adatkapcsolat kikapcsolasa (AT+CNACT=1,0) ──────────────
@@ -648,62 +715,6 @@ String dataConnDisable() {
 // Csak akkor van ertelme, ha mar aktiv az adatkapcsolat. Visszaadja
 // a szoveges eredmenyt ("" hiba eseten a gData.lastError-ben van),
 // es beallitja gData.pingResult/pingOk-ot is a UI szamara.
-String dataConnPing(const String& targetIp) {
-  if(!gModem.ready) return "A modem nincs inicializalva.";
-  if(!gData.active) return "Az adatkapcsolat nincs bekapcsolva - eloszor kapcsold be.";
-  if(targetIp.length() == 0) return "Hianyzik a cel IP-cim.";
-
-  gData.pingInProgress = true;
-  gData.pingTarget = targetIp;
-  gData.pingResult = "";
-
-  modemDrain();
-  modemSerial.println("AT+SNPDPID=0");
-  modemReadUntilFinal(2000);
-
-  modemDrain();
-  modemSerial.println("AT+SNPING4=\"" + targetIp + "\",3,16,1000");
-  // A pingeles akar 3-4 masodpercig is elhuzodhat (3 probalkozas,
-  // 1000ms timeout mindegyikre) - hosszabb ideig varunk a valaszra.
-  String resp = modemReadUntilFinal(6000);
-  gData.pingInProgress = false;
-
-  // Valasz pl.: +SNPING4: 1,8.8.8.8,147  (harom sor jöhet, egy-egy probalkozasra)
-  int successCount = 0;
-  long totalMs = 0;
-  int pos = 0;
-  while(true) {
-    int p = resp.indexOf("+SNPING4:", pos);
-    if(p < 0) break;
-    int lineEnd = resp.indexOf('\n', p);
-    if(lineEnd < 0) lineEnd = resp.length();
-    String line = resp.substring(p, lineEnd);
-    // +SNPING4: <seq>,<ip>,<ms>
-    int lastComma = line.lastIndexOf(',');
-    if(lastComma > 0) {
-      long ms = line.substring(lastComma + 1).toInt();
-      if(ms > 0) { successCount++; totalMs += ms; }
-    }
-    pos = lineEnd;
-  }
-
-  if(successCount > 0) {
-    long avgMs = totalMs / successCount;
-    gData.pingOk = true;
-    gData.pingResult = String(successCount) + "/3 valasz erkezett, atlag " + String(avgMs) + " ms (" + targetIp + ")";
-    Serial.println("[DATA] Ping OK: " + gData.pingResult);
-    return "";
-  }
-
-  gData.pingOk = false;
-  if(resp.indexOf("ERROR") >= 0) {
-    gData.pingResult = "Ping sikertelen: a modem ERROR-t adott. Lehet, hogy nincs internet-eleres az adatcsomagon, vagy a cel nem valaszol.";
-  } else {
-    gData.pingResult = "Ping sikertelen: nem erkezett valasz 3 probalkozas alatt sem (" + targetIp + ").";
-  }
-  Serial.println("[DATA] Ping HIBA: " + gData.pingResult);
-  return gData.pingResult;
-}
 
 // ─── HTTP (Ntfy) Riasztás beküldése ───────────────────────────
 bool sendNtfyAlert(const String& message) {
@@ -1032,4 +1043,103 @@ void ledSetAuto() {
   gLed.manualOverride = false;
   gLed.triggerOn = false;
   Serial.println(F("[LED] Vissza automatikus villogo modba."));
+}
+
+// ─── AT Diagnosztika változók ─────────────────────────────────
+bool gAtStatusInProgress = false;
+String gAtStatusSnapshot = "";
+unsigned long gAtStatusSnapshotAt = 0;
+
+// ─── AT Diagnosztika függvények ───────────────────────────────
+String modemAtQuery(const String& cmd, unsigned long timeoutMs) {
+  modemDrain(25);
+  modemSerial.println(cmd);
+  String resp = modemReadUntilFinal(timeoutMs);
+  resp.trim();
+  if(resp.length() == 0) resp = "(ures valasz / timeout)";
+  return resp;
+}
+
+void refreshAtStatusSnapshot() {
+  static const char* cmds[] = {
+    "AT", "ATI", "AT+CGMI", "AT+CGMM", "AT+CGMR", "AT+CGSN", "AT+CIMI", "AT+CCID",
+    "AT+CPIN?", "AT+CSQ", "AT+COPS?", "AT+CREG?", "AT+CGREG?", "AT+CEREG?", "AT+CNSMOD?",
+    "AT+CGATT?", "AT+CGACT?", "AT+CNACT?", "AT+CGDCONT?", "AT+CSCA?", "AT+CMGF?", "AT+CSCS?",
+    "AT+CNMI?", "AT+CLCC", "AT+CCLK?", "AT+CBC", "AT+CGNSPWR?", "AT+CGNSINF", "AT+CGNSSINFO", "AT+CGNSANT"
+  };
+  static const uint16_t timeouts[] = {
+    800, 1200, 1000, 1000, 1000, 1000, 1200, 1200,
+    1200, 1000, 1800, 1000, 1000, 1000, 1200,
+    1200, 1200, 1800, 1400, 1500, 1000, 1000,
+    1000, 1000, 1200, 1200, 1200, 1800, 1800, 1200
+  };
+  const uint8_t count = sizeof(cmds) / sizeof(cmds[0]);
+
+  gAtStatusInProgress = true;
+  gAtStatusSnapshot = "========================================\n";
+  gAtStatusSnapshot += "        AT ALLAPOT SNAPSHOT             \n";
+  gAtStatusSnapshot += "========================================\n";
+  gAtStatusSnapshot += "Ido: " + bestAvailableTimestamp() + "\n";
+  gAtStatusSnapshot += "========================================\n\n";
+  gAtStatusSnapshot.reserve(6000);
+
+  for(uint8_t i = 0; i < count; i++) {
+    String cmd = cmds[i];
+    String resp = modemAtQuery(cmd, timeouts[i]);
+    
+    resp.replace("\r", "");
+    while(resp.indexOf("\n\n") >= 0) {
+      resp.replace("\n\n", "\n");
+    }
+    resp.trim();
+
+    char numBuf[12];
+    snprintf(numBuf, sizeof(numBuf), "[%02d/%02d] ", i + 1, count);
+
+    gAtStatusSnapshot += String(numBuf) + cmd + "\n";
+    gAtStatusSnapshot += "----------------------------------------\n";
+    gAtStatusSnapshot += (resp.length() > 0 ? resp : "(ures valasz / timeout)") + "\n\n";
+    yield();
+  }
+
+  gAtStatusSnapshotAt = millis();
+  gAtStatusInProgress = false;
+}
+
+// ─── Expert Konfiguráció ──────────────────────────────────────
+
+String modemApplyExpertConfig(const String& cnmp, const String& cgsms, const String& bands, const String& cmnb) {
+  String log = "";
+  modem.sendAT("+CFUN=0"); modem.waitResponse(2000L);
+
+  if(cnmp.length()) {
+    modem.sendAT("+CNMP=" + cnmp);
+    log += "AT+CNMP=" + cnmp + " -> " + modemReadUntilFinal(2000) + "\n";
+  }
+  if(cgsms.length()) {
+    modem.sendAT("+CGSMS=" + cgsms);
+    log += "AT+CGSMS=" + cgsms + " -> " + modemReadUntilFinal(2000) + "\n";
+  }
+  if(bands.length()) {
+    modem.sendAT("+CBANDCFG=\"CATM\"," + bands);
+    log += "AT+CBANDCFG=\"CATM\"," + bands + " -> " + modemReadUntilFinal(2000) + "\n";
+  }
+  if(cmnb.length()) {
+    modem.sendAT("+CMNB=" + cmnb);
+    log += "AT+CMNB=" + cmnb + " -> " + modemReadUntilFinal(2000) + "\n";
+  }
+
+  modem.sendAT("+CFUN=1"); modem.waitResponse(3000L);
+  log += "\nModem rádió újraindítva (+CFUN=1). OK!\n";
+  
+  return log;
+}
+
+void modemResetExpertConfig() {
+  modem.sendAT("+CFUN=0"); modem.waitResponse(2000L);
+  modem.sendAT("+CNMP=38"); modem.waitResponse(1000L);
+  modem.sendAT("+CGSMS=1"); modem.waitResponse(1000L);
+  modem.sendAT("+CMNB=1"); modem.waitResponse(1000L);
+  modem.sendAT("+CBANDCFG=\"CATM\",3,8,20"); modem.waitResponse(1000L);
+  modem.sendAT("+CFUN=1"); modem.waitResponse(3000L);
 }

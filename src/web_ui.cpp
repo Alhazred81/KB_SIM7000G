@@ -1,13 +1,12 @@
-//web_ui.cpp
-
 #include "web_ui.h"
 #include <Arduino.h>
-#include <WebServer.h> // ADD THIS
+#include <WebServer.h>
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include "config.h"
-#include "modem_mgr.h"
 #include "gnss_mgr.h"
+#include "modem_mgr.h"
+#include "NtfyClient.h"
 #include "sensors.h"
 #include "time_mgr.h"
 #include "wifi_sta.h"
@@ -15,12 +14,6 @@
 #include "web_theme.h"
 #include "web_backup.h"
 
-// ─── Globális változók külső hivatkozásai (extern) ───────────
-extern WebServer server; // This tells the compiler the server object exists
-extern DNSServer dnsServer;
-// ... rest of the extern variables ...
-
-// ─── Globális változók külső hivatkozásai (extern) ───────────
 extern WebServer server;
 extern DNSServer dnsServer;
 extern ModemState gModem;
@@ -29,7 +22,9 @@ extern TimeState gTime;
 extern WifiStaState gSta;
 extern DataConnState gData;
 extern LedConfig gLed;
-
+extern NtfyClient ntfy;
+extern String gNtfyServer;
+extern String gNtfyTopic;
 extern WindSpeedState gWindSpeed;
 extern WindDirState gWindDir;
 extern ShtSensorState gSht;
@@ -52,14 +47,20 @@ extern bool gSmsSendInProgress;
 extern bool gSmsSendDone;
 extern String gSmsSendResult;
 
-extern bool gAtStatusInProgress;
-extern String gAtStatusSnapshot;
-extern unsigned long gAtStatusSnapshotAt;
-
 extern ScannedNet gScanResults[];
 extern int gScanCount;
 
-// ─── Belső segédfüggvények ───────────────────────────────────
+extern void saveNtfyConfig(const String& server, const String& topic);
+
+// PIN ellenőrző segédfüggvény a védett oldalakhoz
+bool checkPinGuard() {
+  if (loadPin().length() == 0) {
+    server.sendHeader("Location", "/cfg");
+    server.send(302);
+    return false;
+  }
+  return true;
+}
 
 String stateRow(const String& key, const String& val, const String& cls = "") {
   String s = "<div class='row'><span class='k'>";
@@ -73,8 +74,8 @@ String stateRow(const String& key, const String& val, const String& cls = "") {
 }
 
 String sensorRowHtml(const String& sensorKey, const String& label, bool enabled,
-                      bool hasEverRead, bool isOk, const String& valueText,
-                      const String& pinInfo = "") {
+                     bool hasEverRead, bool isOk, const String& valueText,
+                     const String& pinInfo = "") {
   String color = "gray";
   if(enabled) color = (!hasEverRead) ? "y" : (isOk ? "g" : "r");
   String cssColor = (color=="g") ? "var(--ok)" : (color=="y") ? "var(--warn)" : (color=="r") ? "var(--err)" : "#555";
@@ -130,69 +131,31 @@ void sendWaitPage(const String& title, const String& message, const String& next
   html += "<h2 style='font-size:18px; margin-bottom:15px;'>" + title + "</h2>";
   html += "<div style='font-size:40px; margin:20px 0; display:inline-block; animation:spin 3s linear infinite;'>⚙️</div>";
   html += "<p style='font-size:14px; color:var(--txt); margin-bottom:20px;'>" + message + "</p>";
-  html += "<div class='msg warn' id='countdown' style='font-size:14px; font-weight:bold;'>Hátravan: " + String(waitSeconds) + " mp</div>";
+  html += "<div class='msg warn' id='countdown' style='font-size:14px; font-weight:bold;'>Hátravan max: " + String(waitSeconds) + " mp</div>";
   html += "</div></div>";
   html += "<script>";
+  
   html += "var w = " + String(waitSeconds) + ";";
-  html += "setInterval(function(){ w--; if(w>0) document.getElementById('countdown').innerText = 'Hátravan: ' + w + ' mp'; else location.href='" + nextUrl + "'; }, 1000);";
+  html += "var t = setInterval(function(){ "
+          "  w--; "
+          "  if(w > 0) document.getElementById('countdown').innerText = 'Hátravan max: ' + w + ' mp'; "
+          "  else location.href='" + nextUrl + "'; "
+          "}, 1000);";
+
+  html += "var p = setInterval(function(){"
+          "  fetch('/modemstatus').then(function(r){return r.json();}).then(function(d){"
+          "    if(d && d.inProgress === false) { "
+          "      clearInterval(t); clearInterval(p);"
+          "      document.getElementById('countdown').innerText = 'Kész! Átirányítás...';"
+          "      document.getElementById('countdown').className = 'msg ok';"
+          "      setTimeout(function(){ location.href='" + nextUrl + "'; }, 500);"
+          "    }"
+          "  }).catch(function(){});"
+          "}, 3000);";
+          
   html += "</script>";
   html += htmlFoot();
   server.send(200, "text/html", html);
-}
-
-String modemAtQuery(const String& cmd, unsigned long timeoutMs = 1200) {
-  modemDrain(25);
-  modemSerial.println(cmd);
-  String resp = modemReadUntilFinal(timeoutMs);
-  resp.trim();
-  if(resp.length() == 0) resp = "(ures valasz / timeout)";
-  return resp;
-}
-
-void refreshAtStatusSnapshot() {
-  static const char* cmds[] = {
-    "AT", "ATI", "AT+CGMI", "AT+CGMM", "AT+CGMR", "AT+CGSN", "AT+CIMI", "AT+CCID",
-    "AT+CPIN?", "AT+CSQ", "AT+COPS?", "AT+CREG?", "AT+CGREG?", "AT+CEREG?", "AT+CNSMOD?",
-    "AT+CGATT?", "AT+CGACT?", "AT+CNACT?", "AT+CGDCONT?", "AT+CSCA?", "AT+CMGF?", "AT+CSCS?",
-    "AT+CNMI?", "AT+CLCC", "AT+CCLK?", "AT+CBC", "AT+CGNSPWR?", "AT+CGNSINF", "AT+CGNSSINFO", "AT+CGNSANT"
-  };
-  static const uint16_t timeouts[] = {
-    800, 1200, 1000, 1000, 1000, 1000, 1200, 1200,
-    1200, 1000, 1800, 1000, 1000, 1000, 1200,
-    1200, 1200, 1800, 1400, 1500, 1000, 1000,
-    1000, 1000, 1200, 1200, 1200, 1800, 1800, 1200
-  };
-  const uint8_t count = sizeof(cmds) / sizeof(cmds[0]);
-
-  gAtStatusInProgress = true;
-  gAtStatusSnapshot = "========================================\n";
-  gAtStatusSnapshot += "        AT ALLAPOT SNAPSHOT             \n";
-  gAtStatusSnapshot += "========================================\n";
-  gAtStatusSnapshot += "Ido: " + bestAvailableTimestamp() + "\n";
-  gAtStatusSnapshot += "========================================\n\n";
-  gAtStatusSnapshot.reserve(6000);
-
-  for(uint8_t i = 0; i < count; i++) {
-    String cmd = cmds[i];
-    String resp = modemAtQuery(cmd, timeouts[i]);
-    
-    resp.replace("\r", "");
-    while(resp.indexOf("\n\n") >= 0) {
-      resp.replace("\n\n", "\n");
-    }
-    resp.trim();
-
-    char numBuf[12];
-    snprintf(numBuf, sizeof(numBuf), "[%02d/%02d] ", i + 1, count);
-
-    gAtStatusSnapshot += String(numBuf) + cmd + "\n";
-    gAtStatusSnapshot += "----------------------------------------\n";
-    gAtStatusSnapshot += (resp.length() > 0 ? resp : "(ures valasz / timeout)") + "\n\n";
-    yield();
-  }
-
-  gAtStatusSnapshotAt = millis();
-  gAtStatusInProgress = false;
 }
 
 static String windSpeedValueText() {
@@ -239,8 +202,6 @@ static String ltrValueText() {
   return "UVI " + String(gLtr.uvIndex, 1);
 }
 
-// ─── Statikus fájlok & REST API (Főoldal / SPA) ──────────────
-
 void handleRoot() {
   if (!LittleFS.exists("/index.html")) {
     server.send(404, "text/plain", "index.html nem talalhato a LittleFS-en");
@@ -273,6 +234,7 @@ void handleStyle() {
 
 void handleHomeApi() {
   String json = "{";
+  json += "\"pinSaved\":" + String(loadPin().length() > 0 ? "true" : "false") + ",";
   json += "\"modemReady\":" + String(gModem.ready ? "true" : "false") + ",";
   json += "\"registered\":" + String(gModem.registered ? "true" : "false") + ",";
   json += "\"operator\":\"" + jsEscape(gModem.operatorName) + "\",";
@@ -295,27 +257,10 @@ void handleNotFound() {
   server.send(302,"text/plain","");
 }
 
-// ─── Kommunikációs C++ nézet (SMS, Hívás, Ping) ──────────────
-
-void handleComm() {
-  String html = htmlHead("Kommunikáció", "2");
-  html += "<h1>Kommunikáció</h1>";
-
-  html += "<div class='card'><h2>Adatkapcsolat</h2>";
-  html += stateRow("Állapot", gData.active ? "Aktív" : "Inaktív", gData.active ? "g" : "r");
-  if (gData.active) html += stateRow("IP cím", gData.ip);
-  if (gData.lastError.length()) html += "<div class='msg err'>" + htmlEscape(gData.lastError) + "</div>";
-  html += "<div style='display:flex;gap:8px;margin-top:10px'>";
-  html += "<form action='/dataon' method='POST' style='flex:1'><button>Adat be</button></form>";
-  html += "<form action='/dataoff' method='POST' style='flex:1'><button class='sec'>Adat ki</button></form>";
-  html += "</div></div>";
-
-  html += "<div class='card'><h2>Ping Teszt</h2>";
-  html += "<form action='/dataping' method='POST'>";
-  html += "<input type='text' name='target' placeholder='IP vagy domain (pl. 8.8.8.8)'>";
-  html += "<button class='sec'>Ping indítása</button></form>";
-  if (gData.pingResult.length()) html += "<div class='msg " + String(gData.pingOk ? "ok" : "err") + "' style='margin-top:10px'>" + htmlEscape(gData.pingResult) + "</div>";
-  html += "</div>";
+void handleGsm() {
+  if (!checkPinGuard()) return;
+  String html = htmlHead("GSM", "2");
+  html += "<h1>GSM / Hang / SMS</h1>";
 
   html += "<div class='card wide'><h2>SMS Küldés</h2>";
   html += "<form action='/dosms' method='POST'>";
@@ -338,10 +283,97 @@ void handleComm() {
   server.send(200, "text/html", html);
 }
 
+void handleIot() {
+  if (!checkPinGuard()) return;
+  String html = htmlHead("Internet / IoT", "3");
+  html += "<h1>Internet / IoT</h1>";
+
+  html += "<div class='card'><h2>Adatkapcsolat</h2>";
+  html += stateRow("Állapot", gData.active ? "Aktív" : "Inaktív", gData.active ? "g" : "r");
+  if (gData.active) html += stateRow("IP cím", gData.ip);
+  if (gData.lastError.length()) html += "<div class='msg err'>" + htmlEscape(gData.lastError) + "</div>";
+  html += "<div style='display:flex;gap:8px;margin-top:10px'>";
+  html += "<form action='/dataon' method='POST' style='flex:1'><button>Adat be</button></form>";
+  html += "<form action='/dataoff' method='POST' style='flex:1'><button class='sec'>Adat ki</button></form>";
+  html += "</div></div>";
+
+  html += "<div class='card'><h2>Ping Teszt</h2>";
+  html += "<form action='/dataping' method='POST'>";
+  html += "<input type='text' name='target' placeholder='IP vagy domain (pl. 8.8.8.8)'>";
+  html += "<button class='sec'>Ping indítása</button></form>";
+  if (gData.pingResult.length()) html += "<div class='msg " + String(gData.pingOk ? "ok" : "err") + "' style='margin-top:10px'>" + htmlEscape(gData.pingResult) + "</div>";
+  html += "</div>";
+
+  html += "<div class='card wide'><h2>ntfy Értesítések</h2>";
+  html += "<form action='/ntfy-send' method='POST'>";
+  html += "<label>Üzenet küldése az aktuális csatornára</label>";
+  html += "<input type='text' name='msg' placeholder='Írd be az értesítés szövegét...' required>";
+  html += "<button style='margin-top:8px'>Küldés ntfy-ra</button>";
+  html += "</form>";
+  html += "<hr style='border:0; border-top:1px solid var(--border); margin:15px 0;'>";
+  html += "<form action='/ntfy-poll' method='POST'>";
+  html += "<button class='sec'>Üzenetek lekérdezése (Poll)</button>";
+  html += "</form>";
+  if (gData.lastError.length() && gData.lastError.startsWith("NTFY")) {
+      html += "<div class='msg ok' style='margin-top:10px'>" + htmlEscape(gData.lastError) + "</div>";
+  }
+  html += "</div>";
+
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+void handleNtfySend() {
+  if(!server.hasArg("msg")) { 
+    server.sendHeader("Location","/iot"); server.send(302); return; 
+  }
+  String msg = server.arg("msg");
+  msg.trim();
+  
+  bool ok = ntfy.send(msg.c_str(), "Kaptármonitor Értesítés");
+  
+  if(ok) {
+    diagAdd("ntfy sikeresen elküldve: " + msg);
+  } else {
+    diagAdd("ntfy küldési hiba! HTTP code: " + String(ntfy.getLastHttpCode()));
+  }
+  
+  server.sendHeader("Location","/iot");
+  server.send(302);
+}
+
+void handleNtfyPoll() {
+  NtfyPollResult res = ntfy.pollMessages("10m", ""); 
+  
+  if(res.success) {
+    gData.lastError = "NTFY Válasz: " + res.rawPayload;
+    diagAdd("ntfy poll sikeres. Adat: " + res.rawPayload);
+  } else {
+    gData.lastError = "NTFY Poll hiba! Kód: " + String(res.httpCode);
+    diagAdd("ntfy poll sikertelen.");
+  }
+  
+  server.sendHeader("Location","/iot");
+  server.send(302);
+}
+
+void handleSaveNtfy() {
+  if (server.hasArg("ntfy_topic")) {
+    String srv = server.hasArg("ntfy_server") ? server.arg("ntfy_server") : "ntfy.sh";
+    String top = server.arg("ntfy_topic");
+    srv.trim();
+    top.trim();
+    saveNtfyConfig(srv, top);
+    diagAdd("ntfy konfig mentve: " + srv + "/" + top);
+  }
+  server.sendHeader("Location", "/cfg");
+  server.send(302);
+}
+
 void handleSetSmsc() {
-  if(sendModemBusyPage("SMSC beallitas", "2", "/comm")) return;
+  if(sendModemBusyPage("SMSC beallitas", "2", "/gsm")) return;
   if(!server.hasArg("smsc")){
-    server.sendHeader("Location","/comm"); server.send(302); return;
+    server.sendHeader("Location","/gsm"); server.send(302); return;
   }
   String smsc = server.arg("smsc");
   smsc.trim();
@@ -361,25 +393,25 @@ void handleSetSmsc() {
       html += "<div class='msg err'>" + err + "</div>";
     }
   }
-  html += "<a href='/comm'><button class='sec'>Vissza</button></a>";
+  html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
 
 void handleDoSms() {
-  if(sendModemBusyPage("SMS", "2", "/comm")) return;
+  if(sendModemBusyPage("SMS", "2", "/gsm")) return;
   if(!server.hasArg("num") || !server.hasArg("smstext")){
-    server.sendHeader("Location","/comm"); server.send(302); return;
+    server.sendHeader("Location","/gsm"); server.send(302); return;
   }
 
   unsigned long left = 0;
   if(gLastSms > 0 && millis()-gLastSms < SMS_COOLDOWN_MS)
     left = (SMS_COOLDOWN_MS-(millis()-gLastSms))/1000;
   if(left > 0){
-    server.sendHeader("Location","/comm"); server.send(302); return;
+    server.sendHeader("Location","/gsm"); server.send(302); return;
   }
 
-  String num     = server.arg("num");      num.trim();
+  String num    = server.arg("num");    num.trim();
   String smstext = server.arg("smstext");  smstext.trim();
 
   String clean = "";
@@ -394,14 +426,14 @@ void handleDoSms() {
 
   if(!num.startsWith("+36")||num.length()!=12){
     html += "<div class='msg err'>Ervenytelen telefonszam! A formatum: +36xxxxxxxxx (9 szam a +36 utan).</div>";
-    html += "<a href='/comm'><button class='sec'>Vissza</button></a>";
+    html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
     html += htmlFoot();
     server.send(200, "text/html", html);
     return;
   }
   if(clean.length()==0){
     html += "<div class='msg err'>Az uzenet ures maradt a ekezet-szures utan (csak ekezetes karaktereket irtal be?).</div>";
-    html += "<a href='/comm'><button class='sec'>Vissza</button></a>";
+    html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
     html += htmlFoot();
     server.send(200, "text/html", html);
     return;
@@ -418,7 +450,7 @@ void handleDoSms() {
     "<div id='smsPhase' style='font-size:13px;color:var(--txt2)'>SMS kuldese folyamatban...</div>"
     "<div id='smsSpin' style='font-size:28px;margin:10px 0'>⏳</div>"
     "<div id='smsResult' style='display:none'></div>"
-    "<a href='/comm'><button id='smsWaitBtn' class='sec' disabled style='margin-top:12px'>Varakozas...</button></a>"
+    "<a href='/gsm'><button id='smsWaitBtn' class='sec' disabled style='margin-top:12px'>Varakozas...</button></a>"
     "</div></div>"
     "<script>"
     "function smsPoll(){"
@@ -458,8 +490,8 @@ void handleSmsStatus() {
 }
 
 void handleDoCall() {
-  if(sendModemBusyPage("Hivas", "2", "/comm")) return;
-  if(!server.hasArg("num")){server.sendHeader("Location","/comm");server.send(302);return;}
+  if(sendModemBusyPage("Hivas", "2", "/gsm")) return;
+  if(!server.hasArg("num")){server.sendHeader("Location","/gsm");server.send(302);return;}
   String num = server.arg("num"); num.trim();
   String html = htmlHead("Hivas", "2");
   html += "<h1>Hivasteszt</h1>";
@@ -482,49 +514,45 @@ void handleDoCall() {
       html += "</div>";
     }
   }
-  html += "<a href='/comm'><button class='sec'>Vissza</button></a>";
+  html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
 
 void handleHangup() {
-  if(!gModem.callActive && sendModemBusyPage("Bontas", "2", "/comm")) return;
+  if(!gModem.callActive && sendModemBusyPage("Bontas", "2", "/gsm")) return;
   hangUp();
   diagAdd("Hivas bontva (manualis)");
-  server.sendHeader("Location","/comm");
+  server.sendHeader("Location","/gsm");
   server.send(302);
 }
 
 void handleDataOn() {
-  if(sendModemBusyPage("Adatkapcsolat", "2", "/comm")) return;
+  if(sendModemBusyPage("Adatkapcsolat", "3", "/iot")) return;
   String err = dataConnEnable();
-  diagAdd(err.length() == 0 ? "Adatkapcsolat bekapcsolva, IP: " + gData.ip : "Adatkapcsolat HIBA: " + err);
-  server.sendHeader("Location","/comm");
+  server.sendHeader("Location","/iot");
   server.send(302);
 }
 
 void handleDataOff() {
-  if(sendModemBusyPage("Adatkapcsolat", "2", "/comm")) return;
+  if(sendModemBusyPage("Adatkapcsolat", "3", "/iot")) return;
   String err = dataConnDisable();
-  diagAdd(err.length() == 0 ? "Adatkapcsolat kikapcsolva." : "Adatkapcsolat kikapcsolas HIBA: " + err);
-  server.sendHeader("Location","/comm");
+  server.sendHeader("Location","/iot");
   server.send(302);
 }
 
 void handleDataPing() {
-  if(sendModemBusyPage("Ping", "2", "/comm")) return;
+  if(sendModemBusyPage("Ping", "3", "/iot")) return;
   String target = server.hasArg("target") ? server.arg("target") : "";
   target.trim();
   if(target.length() == 0) target = "1.1.1.1";
   dataConnPing(target);
-  diagAdd("Ping " + target + ": " + gData.pingResult);
-  server.sendHeader("Location","/comm");
+  server.sendHeader("Location","/iot");
   server.send(302);
 }
 
-// ─── C++ nézet (Szenzorok) ───────────────────────────────────
-
 void handleSensors() {
+  if (!checkPinGuard()) return;
   String html = htmlHead("Szenzorok", "7");
   html += "<h1>Szenzorok</h1>";
 
@@ -712,8 +740,6 @@ void handleSensTest() {
   server.send(302);
 }
 
-// ─── C++ nézet (GNSS) ────────────────────────────────────────
-
 void handleGnssStatus() {
   String json = "{";
   json += "\"enabled\":" + String(gGnss.enabled ? "true" : "false") + ",";
@@ -731,8 +757,10 @@ void handleGnssStatus() {
 }
 
 void handleGnss() {
-  String html = htmlHead("GPS", "6");
-  html += "<h1>GPS / GNSS</h1>";
+  if (!checkPinGuard()) return;
+  // MIR Anti-Nuke Express stílusú cím és ikon
+  String html = htmlHead("MIR Anti-Nuke Express", "6");
+  html += "<h1>🛰️ MIR Anti-Nuke Express (GNSS)</h1>";
 
   if(!gModem.ready){
     html += "<div class='msg err'>A modem nincs aktiv, GNSS nem indithato.</div>";
@@ -767,7 +795,7 @@ void handleGnss() {
     html += "<div class='card'><h2>GNSS kikapcsolva</h2>"
             "<form action='/gnssctl' method='POST'>"
             "<input type='hidden' name='action' value='start'>"
-            "<button>🛰 GNSS bekapcsolasa</button>"
+            "<button>🛰 MIR Műhold bekapcsolása</button>"
             "</form></div>";
     html += htmlFoot();
     server.send(200, "text/html", html);
@@ -781,8 +809,8 @@ void handleGnss() {
   dtostrf(activeLon, 0, 6, lonS);
 
   html += "<div class='card'><h2>Pozicio";
-  if(gGnss.fix) html += " <span style='color:var(--ok);font-size:11px'>● FIX</span>";
-  else          html += " <span style='color:var(--warn);font-size:11px'>● Nincs fix</span>";
+  if(gGnss.fix) html += " <span style='color:var(--ok);font-size:11px'>● CÉLBA VÉVE</span>";
+  else          html += " <span style='color:var(--warn);font-size:11px'>● Célkeresztben</span>";
   html += "</h2>";
 
   html += stateRow("Szelesseg", String(latS)+"°");
@@ -793,7 +821,7 @@ void handleGnss() {
   html += stateRow("HDOP", String(gGnss.hdop,1));
 
   html += "<div class='card wide' style='grid-column:1/-1'>"
-          "<h2>Térkép</h2>"
+          "<h2>Térkép / Célpont</h2>"
           "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
           "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
           "<div id='map' style='height:260px;border-radius:8px;margin-top:6px;z-index:1'></div>"
@@ -801,14 +829,14 @@ void handleGnss() {
           "var map = L.map('map').setView([" + String(latS) + ", " + String(lonS) + "], 15);"
           "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'}).addTo(map);"
           "var marker = L.marker([" + String(latS) + ", " + String(lonS) + "]).addTo(map)"
-            ".bindPopup('" + String(gGnss.fix ? "Aktuális fix" : "Kiinduló hely") + "').openPopup();"
+            ".bindPopup('" + String(gGnss.fix ? "MIR Célpont" : "Bennszülött kiinduló hely") + "').openPopup();"
           "var lastLat = " + String(latS) + ", lastLon = " + String(lonS) + ", lastFix = " + String(gGnss.fix ? "true" : "false") + ";"
           "function updateGnssMap(){"
             "fetch('/gnssstatus').then(function(r){return r.json();}).then(function(d){"
               "if(d.fix && (!lastFix || d.lat !== lastLat || d.lon !== lastLon)){"
                 "marker.setLatLng([d.lat, d.lon]);"
                 "map.setView([d.lat, d.lon], 16);"
-                "marker.bindPopup('Aktuális fix').openPopup();"
+                "marker.bindPopup('MIR Célpont').openPopup();"
                 "lastLat = d.lat; lastLon = d.lon; lastFix = d.fix;"
               "}"
             "}).catch(function(){});"
@@ -838,7 +866,7 @@ void handleGnss() {
 
   html += "<form action='/gnssctl' method='POST'>"
           "<input type='hidden' name='action' value='stop'>"
-          "<button class='sec'>GNSS kikapcsolasa</button></form>";
+          "<button class='sec'>MIR Műhold leállítása</button></form>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
@@ -869,9 +897,8 @@ void handleGnssCtl() {
   server.send(302);
 }
 
-// ─── C++ nézet (Expert & Cfg) ────────────────────────────────
-
 void handleExpert() {
+  if (!checkPinGuard()) return;
   String html = htmlHead("Expert Konfig", "8");
   html += "<h1>Expert Modem Konfiguracio</h1>";
 
@@ -915,47 +942,24 @@ void handleExpert() {
 void handleExpertPost() {
   if(sendModemBusyPage("Expert Mentes", "8", "/expert")) return;
 
-  String html = htmlHead("Expert Mentes", "8");
-  html += "<h1>Expert Konfiguráció Eredménye</h1>";
-  html += "<div class='card wide'><div class='diag'>";
-
-  modem.sendAT("+CFUN=0"); modem.waitResponse(2000L);
-
-  if(server.hasArg("cnmp")) {
-    String val = server.arg("cnmp");
-    modem.sendAT("+CNMP=" + val);
-    String r = modemReadUntilFinal(2000);
-    html += "AT+CNMP=" + val + " -> " + r + "\n";
-  }
-
-  if(server.hasArg("cgsms")) {
-    String val = server.arg("cgsms");
-    modem.sendAT("+CGSMS=" + val);
-    String r = modemReadUntilFinal(2000);
-    html += "AT+CGSMS=" + val + " -> " + r + "\n";
-  }
-
+  String cnmp = server.hasArg("cnmp") ? server.arg("cnmp") : "";
+  String cgsms = server.hasArg("cgsms") ? server.arg("cgsms") : "";
+  String cmnb = server.hasArg("cmnb") ? server.arg("cmnb") : "";
+  
   String bands = "1";
   if(server.hasArg("b3")) bands += ",3";
   if(server.hasArg("b8")) bands += ",8";
   if(server.hasArg("b20")) bands += ",20";
-  
-  modem.sendAT("+CBANDCFG=\"CATM\"," + bands);
-  String rBands = modemReadUntilFinal(2000);
-  html += "AT+CBANDCFG=\"CATM\"," + bands + " -> " + rBands + "\n";
 
-  if(server.hasArg("cmnb")) {
-    String val = server.arg("cmnb");
-    modem.sendAT("+CMNB=" + val);
-    String r = modemReadUntilFinal(2000);
-    html += "AT+CMNB=" + val + " -> " + r + "\n";
-  }
+  String resultLog = modemApplyExpertConfig(cnmp, cgsms, bands, cmnb);
 
-  modem.sendAT("+CFUN=1"); modem.waitResponse(3000L);
-  html += "\nModem rádió újraindítva (+CFUN=1). OK!\n";
+  String html = htmlHead("Expert Mentes", "8");
+  html += "<h1>Expert Konfiguráció Eredménye</h1>";
+  html += "<div class='card wide'><div class='diag'>";
+  html += resultLog;
   html += "</div><a href='/expert'><button class='sec' style='margin-top:14px'>Vissza az Expert oldalra</button></a></div>";
-
   html += htmlFoot();
+  
   diagAdd("Expert AT konfiguráció elküldve.");
   server.send(200, "text/html", html);
 }
@@ -963,12 +967,7 @@ void handleExpertPost() {
 void handleExpertReset() {
   if(sendModemBusyPage("Expert Reset", "8", "/expert")) return;
   
-  modem.sendAT("+CFUN=0"); modem.waitResponse(2000L);
-  modem.sendAT("+CNMP=38"); modem.waitResponse(1000L);
-  modem.sendAT("+CGSMS=1"); modem.waitResponse(1000L);
-  modem.sendAT("+CMNB=1"); modem.waitResponse(1000L);
-  modem.sendAT("+CBANDCFG=\"CATM\",3,8,20"); modem.waitResponse(1000L);
-  modem.sendAT("+CFUN=1"); modem.waitResponse(3000L);
+  modemResetExpertConfig();
 
   diagAdd("Expert beállítások visszaállítva gyári alapértelmezettre.");
   server.sendHeader("Location", "/expert");
@@ -1102,6 +1101,15 @@ function doScan(){
     html += "<option value='" + String(i) + "'" + (i==gApChannel ? " selected" : "") + ">Csatorna " + String(i) + "</option>";
   }
   html += "</select><button>Mentes & ujraindulas</button></form></div>";
+
+  html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
+          "<form action='/save-ntfy' method='POST'>"
+          "<label>ntfy Szerver</label>"
+          "<input type='text' name='ntfy_server' value='" + gNtfyServer + "'>"
+          "<label>Topic neve (egyedi azonosító)</label>"
+          "<input type='text' name='ntfy_topic' value='" + gNtfyTopic + "' required>"
+          "<button style='margin-top:10px'>ntfy Mentés</button>"
+          "</form></div>";
 
   html += "<div class='card'><h2>SIM PIN mentese</h2>"
           "<form action='/savepin' method='POST'>"
@@ -1284,8 +1292,6 @@ void handleChangePin() {
   server.send(302);
 }
 
-// ─── C++ nézet (Diag) ────────────────────────────────────────
-
 void handleDiag() {
   String html = htmlHead("Diagnosztika", "5");
   html += "<h1>Diagnosztika</h1>";
@@ -1294,11 +1300,13 @@ void handleDiag() {
           "function copyElement(id){"
             "var e=document.getElementById(id);"
             "if(!e)return;"
-            "window.getSelection().removeAllRanges();"
-            "var r=document.createRange();"
-            "r.selectNodeContents(e);"
-            "window.getSelection().addRange(r);"
-            "alert('A szoveg ki lett jelolve.');"
+            "var text = e.innerText;"
+            "navigator.clipboard.writeText(text).then(function() {"
+              "alert('Vágólapra másolva!');"
+            "}).catch(function(err) {"
+              "console.error('Hiba a másolásnál: ', err);"
+              "alert('Másolás sikertelen.');"
+            "});"
           "}"
           "</script>";
         
@@ -1425,18 +1433,18 @@ void handleReinit() {
   sendWaitPage("Modem Újraindítás", "A modem hardveres és szoftveres újraindítása folyamatban van. A hálózati regisztráció befejezéséig kérlek, várj.", "/", 35);
 }
 
-// ─── Webszerver útvonalak regisztrációja ─────────────────────
-
 void webBegin() {
-  // Statikus fájlok & REST API (Single Page Dashboardhoz)
-  server.on("/",              HTTP_GET,  handleRoot);
+  server.on("/",            HTTP_GET,  handleRoot);
   server.on("/app.js",        HTTP_GET,  handleJs);
   server.on("/style.css",     HTTP_GET,  handleStyle);
   server.on("/s.css",         HTTP_GET,  handleCss);
   server.on("/api/home",      HTTP_GET,  handleHomeApi);
-
-  // Funkcionális aloldalak és C++ végpontok
-  server.on("/comm",          HTTP_GET,  handleComm);
+  server.on("/ntfy-send",     HTTP_POST, handleNtfySend);
+  server.on("/ntfy-poll",     HTTP_POST, handleNtfyPoll);
+  server.on("/save-ntfy",     HTTP_POST, handleSaveNtfy);
+  server.on("/gsm",           HTTP_GET,  handleGsm);
+  server.on("/iot",           HTTP_GET,  handleIot);
+  
   server.on("/dataon",        HTTP_POST, handleDataOn);
   server.on("/dataoff",       HTTP_POST, handleDataOff);
   server.on("/dataping",      HTTP_POST, handleDataPing);
@@ -1483,5 +1491,5 @@ void webBegin() {
   server.onNotFound(handleNotFound);
 
   server.begin();
-  Serial.println(F("[WEB] Webszerver elindult (LittleFS + REST API + C++ Pages)."));
+  Serial.println(F("[WEB] Webszerver elindult."));
 }

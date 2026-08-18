@@ -14,17 +14,24 @@
 #include <LittleFS.h>
 #include "config.h"
 #include "crypto.h"
-#include "time_mgr.h"
-#include "modem_mgr.h"
 #include "gnss_mgr.h"
-#include "wifi_sta.h"
+#include "modem_mgr.h"
+#include "NtfyClient.h"
 #include "sensors.h"
+#include "time_mgr.h"
 #include "web_ui.h"
+#include "wifi_sta.h"
+
 
 
 // ─── Globálisok ─────────────────────────────────────────────
 HardwareSerial modemSerial(1);
 TinyGsm        modem(modemSerial);
+
+// --- ÚJ: NtfyClient példányosítása ---
+// Átadjuk a modem soros portját, a topic nevét, és a szervert[cite: 2].
+NtfyClient     ntfy(modemSerial, "kb_sim7000g_balazs", "ntfy.sh");
+
 WebServer      server(80);
 DNSServer      dnsServer;
 
@@ -54,10 +61,6 @@ bool           gSmsSendInProgress = false;
 bool           gSmsSendDone       = false;
 String         gSmsSendResult     = ""; 
 
-// AT diagnosztikai snapshot globális változóinak definíciója
-bool          gAtStatusInProgress = false;
-String        gAtStatusSnapshot   = "";
-unsigned long gAtStatusSnapshotAt = 0;
 
 String macSuffix() {
   uint8_t mac[6]; WiFi.macAddress(mac);
@@ -283,9 +286,18 @@ Serial.println("======================");
   modemPowerOn();
   String pin = loadPin();
   bool ok = modemInit();
+  
+  // --- ÚJ: ntfy debug engedélyezése ---
+  ntfy.setDebugStream(&Serial); // A soros monitorra is kiírja a HTTP kérések eredményét[cite: 2]
+
   if(ok) {
     diagAdd("Modem OK: "+gModem.operatorName);
     gnssStart(); 
+    
+    // --- ÚJ: Teszt push értesítés küldése a telefonodra ---
+    // Használjuk a prioritást (Default) és a címet a szebb megjelenésért[cite: 2]
+    ntfy.send("A rendszer sikeresen elindult és a modem felcsatlakozott!", "SIM7000G Start", NtfyPriority::Default);
+    
   } else {
     diagAdd("Modem HIBA: "+gModem.lastError);
   }

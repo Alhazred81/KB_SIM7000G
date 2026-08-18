@@ -1,9 +1,9 @@
-// Segédfüggvény a szép sorok rendereléséhez (mint a C++ stateRow)
 function stateRow(key, val, cls = "") {
   return `<div class='row'><span class='k'>${key}</span><span class='v ${cls}'>${val}</span></div>`;
 }
 
 async function loadHome() {
+  if (document.activeElement && document.activeElement.name === "pin") return;
   const statusEl = document.getElementById("status");
 
   try {
@@ -11,7 +11,21 @@ async function loadHome() {
     if (!r.ok) throw new Error("HTTP hiba");
     const d = await r.json();
 
-    let html = "<div class='card'><h2>📡 Modem</h2>";
+    let html = "";
+
+    if (!d.pinSaved) {
+      html += `
+        <div class='card' style='border: 2px solid var(--warn);'>
+          <h2 style='color: var(--warn);'>⚠️ SIM PIN kód szükséges</h2>
+          <p class='hint' style='margin-bottom: 15px;'>A hálózati csatlakozáshoz meg kell adnod a SIM kártya PIN kódját. Ha nincs rajta PIN, hagyd üresen és úgy mentsd el.</p>
+          <form action='/savepin' method='POST'>
+            <input type='password' name='pin' placeholder='4-8 számjegy (pl. 1234)' pattern='[0-9]{0,8}' style='max-width: 200px;'>
+            <button type='submit' class='warn'>PIN Mentése és Csatlakozás</button>
+          </form>
+        </div>`;
+    }
+
+    html += "<div class='card'><h2>📡 Modem</h2>";
     html += stateRow(
       "Állapot",
       d.modemReady ? "Kész" : "Inicializálás...",
@@ -47,13 +61,9 @@ async function loadHome() {
     statusEl.innerHTML = html;
   } catch (err) {
     console.error("Adatlekérési hiba:", err);
-    // Ha még töltés képernyő van, jelezzük a hibát
-    if (statusEl.innerHTML.includes("⏳")) {
-      statusEl.innerHTML = `<div class='card'><div class='msg err'>Hiba a kapcsolatban az ESP32-vel. Újrapróbálkozás...</div></div>`;
-    }
+    statusEl.innerHTML = `<div class='card' style='text-align:center;'><div class='msg warn' style='margin-bottom:0;'>⏳ Várakozás a szerverre...<br><span style='font-size:11px;font-weight:normal;'>A szerver jelenleg elfoglalt.</span></div></div>`;
   }
 }
 
-// Azonnali betöltés, majd 3 másodpercenkénti frissítés
 loadHome();
 setInterval(loadHome, 3000);
