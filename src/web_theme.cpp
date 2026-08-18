@@ -10,11 +10,13 @@ String htmlHead(const String& title, const String& active_id) {
   String s = "<!doctype html><html lang='hu'><head><meta charset='utf-8'>";
   s += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   s += "<meta name='theme-color' content='#0d0d1a'>";
-  s += "<title>KB SIM7000G - " + htmlEscape(title) + "</title>";
+  // Méhecske ikon (favicon) data-uri formátumban
+  s += "<link rel='icon' href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>\">";
+  s += "<title>Kaptármonitor - " + htmlEscape(title) + "</title>";
   s += "<link rel='stylesheet' href='/s.css'>";
   s += "</head><body>";
   
-  // Felső menüsor generálása, az aktuális oldal kiemelésével
+  // Fixen rögzített felső menüsor
   s += "<nav>";
   s += "<a href='/'" + String(active_id=="1"?" class='on'":"") + ">&#127968; Főoldal</a>";
   s += "<a href='/gsm'" + String(active_id=="2"?" class='on'":"") + ">&#128241; GSM</a>";

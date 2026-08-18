@@ -303,6 +303,22 @@ Serial.println("======================");
   }
 
   Serial.println(F("=== Kész. Ird 'help' a serial parancsokhoz. ==="));
+
+  if(ok) {
+    diagAdd("Modem OK: "+gModem.operatorName);
+    gnssStart(); 
+    
+    // --- ÚJ: Automatikus adatkapcsolat aktiválása hálózatra lépés után ---
+    diagAdd("Adatkapcsolat automatikus indítása...");
+    dataConnEnable();
+    
+    // Teszt push értesítés küldése
+    ntfy.send("A rendszer sikeresen elindult, a modem felcsatlakozott és az adatkapcsolat aktív!", "SIM7000G Start", NtfyPriority::Default);
+    
+  } else {
+    diagAdd("Modem HIBA: "+gModem.lastError);
+  }
+
 }
 
 void loop() {

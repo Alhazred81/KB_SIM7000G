@@ -52,6 +52,9 @@ extern int gScanCount;
 
 extern void saveNtfyConfig(const String& server, const String& topic);
 
+// Ideiglenes memória a sikeresen tesztelt, de még nem mentett PIN-nek
+static String gLastValidPin = "";
+
 // PIN ellenőrző segédfüggvény a védett oldalakhoz
 bool checkPinGuard() {
   if (loadPin().length() == 0) {
@@ -260,7 +263,6 @@ void handleNotFound() {
 void handleGsm() {
   if (!checkPinGuard()) return;
   String html = htmlHead("GSM", "2");
-  html += "<h1>GSM / Hang / SMS</h1>";
 
   html += "<div class='card wide'><h2>SMS Küldés</h2>";
   html += "<form action='/dosms' method='POST'>";
@@ -279,6 +281,27 @@ void handleGsm() {
   html += "<input type='text' name='smsc' value='" + gModem.smscNumber + "'>";
   html += "<button class='sec'>Mentés</button></form></div>";
 
+  // --- ÚJ: Hálózatválasztás és Kézi Rögzítés Kártya ---
+  html += "<div class='card wide'><h2>Hálózatválasztás (Automata / Kézi)</h2>";
+  html += "<p class='hint'>Alapértelmezésben automata, de fix telepítésnél rögzítheted a saját szolgáltatód, hogy ne keresgéljen feleslegesen.</p>";
+  
+  html += stateRow("Jelenlegi operátor", gModem.operatorName.length() ? gModem.operatorName : "Ismeretlen");
+  html += stateRow("Hálózati típus", gModem.netType.length() ? gModem.netType : "Ismeretlen");
+
+  html += "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap'>";
+  html += "<form action='/netauto' method='POST' style='flex:1;min-width:140px'><button class='sec'>🔄 Váltás Automatikusra</button></form>";
+  html += "<form action='/netscan' method='POST' style='flex:1;min-width:140px'><button class='sec'>📡 Hálózatok keresése</button></form>";
+  html += "</div>";
+
+  html += "<form action='/netmanual' method='POST' style='margin-top:14px;border-top:1px solid var(--border);padding-top:12px'>";
+  html += "<label>Kézi hálózat rögzítése (MCC/MNC kód, pl. Telekom: 21630)</label>";
+  html += "<div style='display:flex;gap:8px'>";
+  html += "<input type='text' name='netcode' placeholder='pl. 21630' style='flex:1;margin:0'>";
+  html += "<button style='width:auto;padding:0 16px'>Rögzítés</button>";
+  html += "</div></form>";
+
+  html += "</div>";
+
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
@@ -286,15 +309,20 @@ void handleGsm() {
 void handleIot() {
   if (!checkPinGuard()) return;
   String html = htmlHead("Internet / IoT", "3");
-  html += "<h1>Internet / IoT</h1>";
 
   html += "<div class='card'><h2>Adatkapcsolat</h2>";
   html += stateRow("Állapot", gData.active ? "Aktív" : "Inaktív", gData.active ? "g" : "r");
   if (gData.active) html += stateRow("IP cím", gData.ip);
   if (gData.lastError.length()) html += "<div class='msg err'>" + htmlEscape(gData.lastError) + "</div>";
+  
   html += "<div style='display:flex;gap:8px;margin-top:10px'>";
-  html += "<form action='/dataon' method='POST' style='flex:1'><button>Adat be</button></form>";
-  html += "<form action='/dataoff' method='POST' style='flex:1'><button class='sec'>Adat ki</button></form>";
+  if (gData.active) {
+    html += "<form action='/dataon' method='POST' style='flex:1'><button class='sec' disabled>Adat be</button></form>";
+    html += "<form action='/dataoff' method='POST' style='flex:1'><button class='danger'>Adat ki</button></form>";
+  } else {
+    html += "<form action='/dataon' method='POST' style='flex:1'><button>Adat be</button></form>";
+    html += "<form action='/dataoff' method='POST' style='flex:1'><button class='sec' disabled>Adat ki</button></form>";
+  }
   html += "</div></div>";
 
   html += "<div class='card'><h2>Ping Teszt</h2>";
@@ -379,7 +407,6 @@ void handleSetSmsc() {
   smsc.trim();
 
   String html = htmlHead("SMSC beallitas", "2");
-  html += "<h1>SMSC beallitas</h1>";
 
   if(smsc.length() == 0) {
     html += "<div class='msg err'>Az SMSC szam nem lehet ures.</div>";
@@ -422,7 +449,6 @@ void handleDoSms() {
   }
 
   String html = htmlHead("SMS", "2");
-  html += "<h1>SMS kuldés</h1>";
 
   if(!num.startsWith("+36")||num.length()!=12){
     html += "<div class='msg err'>Ervenytelen telefonszam! A formatum: +36xxxxxxxxx (9 szam a +36 utan).</div>";
@@ -494,7 +520,7 @@ void handleDoCall() {
   if(!server.hasArg("num")){server.sendHeader("Location","/gsm");server.send(302);return;}
   String num = server.arg("num"); num.trim();
   String html = htmlHead("Hivas", "2");
-  html += "<h1>Hivasteszt</h1>";
+
   if(!num.startsWith("+36")||num.length()!=12){
     html += "<div class='msg err'>Ervenytelen szam! A formatum: +36xxxxxxxxx (9 szam a +36 utan).</div>";
   } else {
@@ -554,7 +580,6 @@ void handleDataPing() {
 void handleSensors() {
   if (!checkPinGuard()) return;
   String html = htmlHead("Szenzorok", "7");
-  html += "<h1>Szenzorok</h1>";
 
   html += "<div class='card wide'><h2>Allapot</h2>";
   html += sensorRowHtml("windspeed", "Szelsebesseg", gWindSpeed.enabled,
@@ -758,9 +783,7 @@ void handleGnssStatus() {
 
 void handleGnss() {
   if (!checkPinGuard()) return;
-  // MIR Anti-Nuke Express stílusú cím és ikon
-  String html = htmlHead("MIR Anti-Nuke Express", "6");
-  html += "<h1>🛰️ MIR Anti-Nuke Express (GNSS)</h1>";
+  String html = htmlHead("GPS", "6");
 
   if(!gModem.ready){
     html += "<div class='msg err'>A modem nincs aktiv, GNSS nem indithato.</div>";
@@ -795,7 +818,7 @@ void handleGnss() {
     html += "<div class='card'><h2>GNSS kikapcsolva</h2>"
             "<form action='/gnssctl' method='POST'>"
             "<input type='hidden' name='action' value='start'>"
-            "<button>🛰 MIR Műhold bekapcsolása</button>"
+            "<button>🛰 GNSS bekapcsolasa</button>"
             "</form></div>";
     html += htmlFoot();
     server.send(200, "text/html", html);
@@ -809,8 +832,8 @@ void handleGnss() {
   dtostrf(activeLon, 0, 6, lonS);
 
   html += "<div class='card'><h2>Pozicio";
-  if(gGnss.fix) html += " <span style='color:var(--ok);font-size:11px'>● CÉLBA VÉVE</span>";
-  else          html += " <span style='color:var(--warn);font-size:11px'>● Célkeresztben</span>";
+  if(gGnss.fix) html += " <span style='color:var(--ok);font-size:11px'>● FIX</span>";
+  else          html += " <span style='color:var(--warn);font-size:11px'>● Nincs fix</span>";
   html += "</h2>";
 
   html += stateRow("Szelesseg", String(latS)+"°");
@@ -821,7 +844,7 @@ void handleGnss() {
   html += stateRow("HDOP", String(gGnss.hdop,1));
 
   html += "<div class='card wide' style='grid-column:1/-1'>"
-          "<h2>Térkép / Célpont</h2>"
+          "<h2>Térkép</h2>"
           "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
           "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
           "<div id='map' style='height:260px;border-radius:8px;margin-top:6px;z-index:1'></div>"
@@ -829,14 +852,14 @@ void handleGnss() {
           "var map = L.map('map').setView([" + String(latS) + ", " + String(lonS) + "], 15);"
           "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'}).addTo(map);"
           "var marker = L.marker([" + String(latS) + ", " + String(lonS) + "]).addTo(map)"
-            ".bindPopup('" + String(gGnss.fix ? "MIR Célpont" : "Bennszülött kiinduló hely") + "').openPopup();"
+            ".bindPopup('" + String(gGnss.fix ? "Aktuális fix" : "Kiinduló hely") + "').openPopup();"
           "var lastLat = " + String(latS) + ", lastLon = " + String(lonS) + ", lastFix = " + String(gGnss.fix ? "true" : "false") + ";"
           "function updateGnssMap(){"
             "fetch('/gnssstatus').then(function(r){return r.json();}).then(function(d){"
               "if(d.fix && (!lastFix || d.lat !== lastLat || d.lon !== lastLon)){"
                 "marker.setLatLng([d.lat, d.lon]);"
                 "map.setView([d.lat, d.lon], 16);"
-                "marker.bindPopup('MIR Célpont').openPopup();"
+                "marker.bindPopup('Aktuális fix').openPopup();"
                 "lastLat = d.lat; lastLon = d.lon; lastFix = d.fix;"
               "}"
             "}).catch(function(){});"
@@ -866,7 +889,7 @@ void handleGnss() {
 
   html += "<form action='/gnssctl' method='POST'>"
           "<input type='hidden' name='action' value='stop'>"
-          "<button class='sec'>MIR Műhold leállítása</button></form>";
+          "<button class='sec'>GNSS kikapcsolasa</button></form>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
@@ -900,7 +923,6 @@ void handleGnssCtl() {
 void handleExpert() {
   if (!checkPinGuard()) return;
   String html = htmlHead("Expert Konfig", "8");
-  html += "<h1>Expert Modem Konfiguracio</h1>";
 
   html += "<div class='card wide'>"
           "<form action='/expertpost' method='POST'>"
@@ -976,13 +998,12 @@ void handleExpertReset() {
 
 void handleCfg() {
   String html = htmlHead("Beallitasok", "4");
-  html += "<h1>Beallitasok</h1>";
 
   html += "<div class='card wide'><h2>WiFi halozatra csatlakozas</h2>";
 
   if(gSta.mode == NetMode::STA_CONNECTED) {
     html += "<div class='msg ok'>Csatlakozva: <b>" + htmlEscape(gSta.targetSSID) + "</b><br>"
-            "IP cim: " + gSta.ip + "</div>"
+           "IP cim: " + gSta.ip + "</div>"
             "<form action='/stadisconnect' method='POST'>"
             "<button class='sec'>Kliens mod elhagyasa (vissza AP-ra)</button></form>";
   }
@@ -1111,12 +1132,27 @@ function doScan(){
           "<button style='margin-top:10px'>ntfy Mentés</button>"
           "</form></div>";
 
-  html += "<div class='card'><h2>SIM PIN mentese</h2>"
-          "<form action='/savepin' method='POST'>"
-          "<label>PIN kod (4-8 szam)</label>"
+  // --- ÚJ: Biztonságos, kétlépcsős SIM PIN mentés és tesztelés ---
+  if (server.hasArg("pin_ok") && gLastValidPin.length() > 0) {
+    html += "<div class='card wide' style='border-color:var(--ok);'>"
+           "<h2>🎉 SIM sikeresen feloldva!</h2>"
+           "<p class='hint'>A megadott PIN kód helyesnek bizonyult. Szeretnéd XTEA-val titkosítva elmenteni, hogy a jövőben automatikusan csatlakozzon?</p>"
+           "<form action='/confirmsavepin' method='POST'>"
+           "<input type='hidden' name='confirmed_pin' value='" + gLastValidPin + "'>"
+           "<button style='background:var(--ok); margin-top:10px;'>Igen, mentés XTEA titkosítással</button>"
+           "</form></div>";
+  } else if (server.hasArg("pin_err")) {
+    html += "<div class='card wide' style='border-color:var(--err);'>"
+           "<h2>❌ Hibás PIN kód</h2>"
+           "<p class='hint' style='color:var(--err);'>A megadott PIN kóddal a SIM kártya elutasította a bejelentkezést.</p></div>";
+  }
+
+  html += "<div class='card'><h2>SIM PIN teszt & mentés</h2>"
+          "<form action='/testsavepin' method='POST'>"
+          "<label>PIN kód (4-8 szám)</label>"
           "<input type='password' name='pin' id='pi' maxlength='8' "
           "pattern='[0-9]{4,8}' placeholder='pl. 1234' oninput='pc()'>"
-          "<button type='submit' id='pb' disabled>Mentes & csatlakozas</button>"
+          "<button type='submit' id='pb' disabled>PIN tesztelése</button>"
           "</form>"
           "<script>"
           "function pc(){var v=document.getElementById('pi').value;"
@@ -1177,6 +1213,39 @@ function doScan(){
 
   html += htmlFoot();
   server.send(200, "text/html", html);
+}
+
+void handleTestSavePin() {
+  if(!server.hasArg("pin")){ server.sendHeader("Location","/cfg"); server.send(302); return; }
+  String pin = server.arg("pin"); pin.trim();
+  
+  // Teszteljük a modemen keresztül
+  modem.simUnlock(pin.c_str());
+  delay(1200);
+
+  if (modem.getSimStatus() == 3) {
+    gLastValidPin = pin;
+    diagAdd("SIM PIN teszt SIKERES.");
+    server.sendHeader("Location", "/cfg?pin_ok=1");
+  } else {
+    gLastValidPin = "";
+    diagAdd("SIM PIN teszt SIKERTELEN.");
+    server.sendHeader("Location", "/cfg?pin_err=1");
+  }
+  server.send(302);
+}
+
+void handleConfirmSavePin() {
+  if(server.hasArg("confirmed_pin") && server.arg("confirmed_pin") == gLastValidPin && gLastValidPin.length() > 0) {
+    savePin(gLastValidPin); // Titkosítva menti a crypto.cpp szerint
+    diagAdd("PIN sikeresen elmentve XTEA titkosítással.");
+    gLastValidPin = "";
+    gModemInitRequested = true;
+    sendWaitPage("Modem Inicializálás", "A PIN kód biztonságosan elmentve. A modem újracsatlakozása folyamatban...", "/", 30);
+    return;
+  }
+  server.sendHeader("Location", "/cfg");
+  server.send(302);
 }
 
 void handleSavePanelVer() {
@@ -1294,7 +1363,6 @@ void handleChangePin() {
 
 void handleDiag() {
   String html = htmlHead("Diagnosztika", "5");
-  html += "<h1>Diagnosztika</h1>";
 
   html += "<script>"
           "function copyElement(id){"
@@ -1433,6 +1501,123 @@ void handleReinit() {
   sendWaitPage("Modem Újraindítás", "A modem hardveres és szoftveres újraindítása folyamatban van. A hálózati regisztráció befejezéséig kérlek, várj.", "/", 35);
 }
 
+void handleNetAuto() {
+  if(sendModemBusyPage("Hálózatváltás", "2", "/gsm")) return;
+  String err = setAutoNetwork();
+  if(err.length() == 0) {
+    diagAdd("Hálózat visszaállítva automatikus módra.");
+  } else {
+    diagAdd("Hiba automatikus hálózatváltáskor: " + err);
+  }
+  server.sendHeader("Location", "/gsm");
+  server.send(302);
+}
+
+void handleNetScan() {
+  if(sendModemBusyPage("Hálózatkeresés", "2", "/gsm")) return;
+  diagAdd("Hálózatok keresése indítva (AT+COPS=)...");
+  String rawRes = scanAvailableNetworks();
+  diagAdd("Hálózat keresés eredménye: " + rawRes);
+  
+  String html = htmlHead("Hálózatválasztás", "2");
+  html += "<h1>Elérhető mobilhálózatok</h1>";
+  html += "<div class='card wide'>";
+  html += "<p class='hint'>Válaszd ki az alábbi listából a kívánt hálózatot a rögzítéshez:</p>";
+
+  html += "<form action='/netmanual' method='POST'>";
+  html += "<label>Talált hálózatok</label>";
+  html += "<select name='netcode' style='margin-bottom:12px'>";
+
+  // Robusztusabb feldolgozás: végigmegyünk a nyers válaszon és kiszedjük az idézőjeles részeket
+  int pos = 0;
+  bool foundAny = false;
+
+  while(true) {
+    int start = rawRes.indexOf('(', pos);
+    if(start < 0) break;
+    int end = rawRes.indexOf(')', start);
+    if(end < 0) break;
+    
+    String entry = rawRes.substring(start + 1, end);
+    pos = end + 1;
+
+    // Az entry formátuma pl: 1,"Telekom HU","THU","21630",7
+    // Gyűjtsük ki az összes idézőjelek közötti szöveget egy tömbbe/listába
+    String parts[10];
+    int partCount = 0;
+    int pIdx = 0;
+    while(partCount < 10) {
+      int q1 = entry.indexOf('"', pIdx);
+      if(q1 < 0) break;
+      int q2 = entry.indexOf('"', q1 + 1);
+      if(q2 < 0) break;
+      parts[partCount++] = entry.substring(q1 + 1, q2);
+      pIdx = q2 + 1;
+    }
+
+    // Ha van legalább név és kód (általában a 0. elem a név, az utolsó előtti vagy utolsó a kód)
+    if(partCount >= 2) {
+      String netName = parts[0];
+      String netCode = "";
+      
+      // Megkeressük azt a részt, ami egy 5 jegyű szám (MCC+MNC, pl. 21630)
+      for(int i = 0; i < partCount; i++) {
+        if(parts[i].length() == 5 && isDigit(parts[i][0])) {
+          netCode = parts[i];
+          break;
+        }
+      }
+
+      if(netCode.length() > 0) {
+        foundAny = true;
+        html += "<option value='" + netCode + "'>" + htmlEscape(netName) + " (" + netCode + ")</option>";
+      }
+    }
+  }
+
+  if(!foundAny) {
+    html += "<option value=''>Nem található értelmezhető hálózat</option>";
+  }
+
+  html += "</select>";
+  html += "<button style='margin-top:6px' " + String(foundAny ? "" : "disabled") + ">Kiválasztott hálózat rögzítése</button>";
+  html += "</form>";
+
+  html += "<details style='margin-top:20px'><summary class='hint' style='cursor:pointer'>Nyers modem válasz</summary>";
+  html += "<div class='diag' style='margin-top:6px'>" + htmlEscape(rawRes) + "</div></details>";
+
+  html += "<a href='/gsm'><button class='sec' style='margin-top:14px'>Vissza a GSM oldalra</button></a></div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+void handleNetManual() {
+  if(sendModemBusyPage("Kézi Hálózat", "2", "/gsm")) return;
+  if(!server.hasArg("netcode")) {
+    server.sendHeader("Location", "/gsm");
+    server.send(302);
+    return;
+  }
+  String code = server.arg("netcode");
+  code.trim();
+  
+  String err = setManualNetwork(code, 7); 
+  String html = htmlHead("Hálózat rögzítés", "2");
+  html += "<h1>Kézi hálózat rögzítése</h1>";
+  
+  if(err.length() == 0) {
+    diagAdd("Sikeresen rögzítve a kézi hálózat: " + code);
+    html += "<div class='msg ok'>A hálózat sikeresen rögzítve: " + htmlEscape(code) + "</div>";
+  } else {
+    diagAdd("Hiba a hálózat rögzítésekor: " + err);
+    html += "<div class='msg err'>" + htmlEscape(err) + "</div>";
+  }
+  
+  html += "<a href='/gsm'><button class='sec'>Vissza a GSM oldalra</button></a>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
 void webBegin() {
   server.on("/",            HTTP_GET,  handleRoot);
   server.on("/app.js",        HTTP_GET,  handleJs);
@@ -1471,6 +1656,8 @@ void webBegin() {
   server.on("/stadisconnect", HTTP_POST, handleStaDisconnect);
   server.on("/savepin",       HTTP_POST, handleSavePin);
   server.on("/changepin",     HTTP_POST, handleChangePin);
+  server.on("/testsavepin",   HTTP_POST, handleTestSavePin);
+  server.on("/confirmsavepin",HTTP_POST, handleConfirmSavePin);
   server.on("/savepanelver",  HTTP_POST, handleSavePanelVer);
   server.on("/ledtrigger",    HTTP_POST, handleLedTrigger);
   server.on("/ledauto",       HTTP_POST, handleLedAuto);
@@ -1487,6 +1674,10 @@ void webBegin() {
   server.on("/hangup",        HTTP_POST, handleHangup);
   server.on("/modemstatus",   HTTP_GET,  handleModemStatus);
   server.on("/reinit",        HTTP_POST, handleReinit);
+
+  server.on("/netauto",       HTTP_POST, handleNetAuto);
+  server.on("/netscan",       HTTP_POST, handleNetScan);
+  server.on("/netmanual",     HTTP_POST, handleNetManual);
 
   server.onNotFound(handleNotFound);
 

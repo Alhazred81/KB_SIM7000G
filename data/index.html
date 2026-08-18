@@ -3,30 +3,56 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kaptármonitor - MIR KÖZPONT</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>"
+    />
+    <title>Kaptármonitor</title>
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/s.css" />
   </head>
   <body>
-    <div class="wrap">
-      <h1>🐝 Kaptármonitor & MIR Rendszer</h1>
+    <!-- Fixen rögzített navigációs sáv -->
+    <nav>
+      <a href="/" class="on">&#127968; Főoldal</a>
+      <a href="/gsm">&#128241; GSM</a>
+      <a href="/iot">&#127760; Internet</a>
+      <a href="/gnss">&#128640; GPS</a>
+      <a href="/sensors">&#127777; Szenzor</a>
+      <a href="/cfg">&#9881; Konfig</a>
+      <a href="/expert">&#9888; Expert</a>
+      <a href="/diag">&#128269; Diag</a>
+    </nav>
 
+    <div class="wrap">
       <!-- Státusz Kártya -->
       <div class="card" id="statusCard">
         <h2>Modem & Hálózat</h2>
         <div id="status">Állapot betöltése...</div>
       </div>
 
+      <!-- Szenzorok Áttekintő Kártya a Főoldalon -->
+      <div class="card" id="homeSensorsCard">
+        <h2>🌡️ Szenzorok Áttekintés</h2>
+        <div id="homeSensorsList">
+          <div class="row">
+            <span class="k">Mérések</span><span class="v dim">Betöltés...</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Mesterterv / Naptár Kártya -->
-      <div class="card wide">
-        <h2>📅 Anyanevelési Mesterterv (Naptár)</h2>
+      <div class="card">
+        <h2>📅 Anyanevelési Mesterterv</h2>
         <div
           id="calendar"
           style="
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
+            gap: 6px;
             text-align: center;
             font-size: 12px;
+            margin-top: 10px;
           "
         >
           <div style="font-weight: bold; color: var(--accent)">H</div>
@@ -36,7 +62,7 @@
           <div style="font-weight: bold; color: var(--accent)">P</div>
           <div style="font-weight: bold; color: var(--accent)">Szo</div>
           <div style="font-weight: bold; color: var(--accent)">V</div>
-          <!-- Statikus/Dinamikus napok bemutató rácsa -->
+
           <div
             style="
               background: #141428;
@@ -67,6 +93,7 @@
           >
             30
           </div>
+
           <div
             style="
               background: var(--accent);
@@ -74,15 +101,53 @@
               padding: 8px;
               border-radius: 4px;
               font-weight: bold;
+              position: relative;
             "
           >
-            1<br /><span style="font-size: 9px">Átvétel</span>
+            1
+            <span
+              style="
+                position: absolute;
+                top: -4px;
+                right: -4px;
+                background: var(--err);
+                color: #fff;
+                font-size: 9px;
+                padding: 1px 4px;
+                border-radius: 50%;
+                border: 1px solid #fff;
+              "
+              >2</span
+            >
+            <br /><span style="font-size: 9px">Átvétel</span>
           </div>
+
           <div style="background: #141428; padding: 8px; border-radius: 4px">
             2
           </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
+          <div
+            style="
+              background: #141428;
+              padding: 8px;
+              border-radius: 4px;
+              position: relative;
+            "
+          >
             3
+            <span
+              style="
+                position: absolute;
+                top: -4px;
+                right: -4px;
+                background: var(--warn);
+                color: #000;
+                font-size: 9px;
+                padding: 1px 4px;
+                border-radius: 50%;
+                border: 1px solid #fff;
+              "
+              >1</span
+            >
           </div>
           <div style="background: #141428; padding: 8px; border-radius: 4px">
             4
@@ -109,22 +174,44 @@
             11
           </div>
         </div>
-        <div class="hint" style="margin-top: 8px">
+        <div class="hint" style="margin-top: 10px">
           Petés anyanevelési ütemezés aktiválva.
         </div>
-      </div>
-
-      <!-- Navigációs Menü Sáv -->
-      <div class="card wide" style="text-align: center">
-        <a href="/gsm"><button class="sec">📞 GSM / SMS</button></a>
-        <a href="/iot"><button class="sec">🌐 Internet / IoT</button></a>
-        <a href="/gnss"><button class="sec">🛰️ MIR Műhold</button></a>
-        <a href="/sensors"><button class="sec">🌡️ Szenzorok</button></a>
-        <a href="/cfg"><button class="sec">⚙️ Beállítások</button></a>
-        <a href="/diag"><button class="sec">📊 Diagnosztika</button></a>
       </div>
     </div>
 
     <script src="/app.js"></script>
+    <script>
+      // Főoldali szenzorok lekérdezése az API-ból
+      function loadHomeSensors() {
+        fetch("/sensstatus")
+          .then((r) => r.json())
+          .then((d) => {
+            let html = "";
+            for (let key in d) {
+              let s = d[key];
+              let val =
+                s.value || (s.enabled ? "mérés folyamatban..." : "kikapcsolva");
+              let cls = s.value ? (s.ok ? "g" : "y") : "dim";
+              // Szép magyar nevek hozzárendelése a kulcsokhoz
+              let names = {
+                windspeed: "Szélsebesség",
+                winddir: "Szélirány",
+                sht: "SHT Hő/Pára",
+                rain: "Esőszenzor",
+                mpu: "MPU6050",
+                ahtbmp: "AHT+BMP",
+                ltr: "UV LTR-390",
+              };
+              let label = names[key] || key;
+              html += `<div class='row'><span class='k'>${label}</span><span class='v ${cls}'>${val}</span></div>`;
+            }
+            document.getElementById("homeSensorsList").innerHTML = html;
+          })
+          .catch((err) => {});
+      }
+      setInterval(loadHomeSensors, 4000);
+      loadHomeSensors();
+    </script>
   </body>
 </html>

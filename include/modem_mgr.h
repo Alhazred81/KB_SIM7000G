@@ -28,6 +28,8 @@ extern bool gAtStatusInProgress;
 extern String gAtStatusSnapshot;
 extern unsigned long gAtStatusSnapshotAt;
 
+extern void diagAdd(const String& msg);
+
 // ─── Serial log ─────────────────────────────────────────────
 #define MLOG(x)   Serial.println(F("[MODEM] " x))
 #define MLOGv(x)  Serial.println("[MODEM] " + String(x))
@@ -40,6 +42,10 @@ String modemGetTime();
 String bestAvailableTimestamp();
 void updateModemStats();
 bool modemInit();
+
+String scanAvailableNetworks();
+String setManualNetwork(const String& numericCode, int act = 7);
+String setAutoNetwork();
 
 // ─── AT kommunikáció és diagnosztika ────────────────────────
 String modemAtQuery(const String& cmd, unsigned long timeoutMs = 1200);
