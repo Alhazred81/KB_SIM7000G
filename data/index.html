@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="hu">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d0d1a" />
+    <title>KB SIM7000G - Főoldal</title>
+    <link rel="stylesheet" href="/s.css" />
+  </head>
+  <body>
+    <nav>
+      <a href="/" class="on">&#127968; Főoldal</a>
+      <a href="/comm">&#128172; Komm.</a>
+      <a href="/gnss">&#128640; GPS</a>
+      <a href="/sensors">&#127777; Szenzor</a>
+      <a href="/cfg">&#9881; Konfig</a>
+      <a href="/expert">&#9888; Expert</a>
+      <a href="/diag">&#128269; Diag</a>
+    </nav>
+
+    <div class="wrap">
+      <h1>Rendszer Állapot (Élő)</h1>
+
+      <div id="status">
+        <div style="text-align: center; padding: 20px; color: var(--txt2)">
+          <div style="font-size: 24px; margin-bottom: 10px">⏳</div>
+          Adatok lekérése az ESP32-ről...
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

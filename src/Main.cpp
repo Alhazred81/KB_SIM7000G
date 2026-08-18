@@ -11,6 +11,7 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <EEPROM.h>
+#include <LittleFS.h>
 #include "config.h"
 #include "crypto.h"
 #include "time_mgr.h"
@@ -19,6 +20,7 @@
 #include "wifi_sta.h"
 #include "sensors.h"
 #include "web_ui.h"
+
 
 // ─── Globálisok ─────────────────────────────────────────────
 HardwareSerial modemSerial(1);
@@ -29,7 +31,6 @@ DNSServer      dnsServer;
 ModemState     gModem;
 LedConfig      gLed;
 GnssState      gGnss;
-WifiStaState   gSta;
 DataConnState  gData;
 WindSpeedState gWindSpeed;
 WindDirState   gWindDir;
@@ -232,6 +233,27 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println(F("\n=== KB SIM7000G indul ==="));
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS MOUNT HIBA");
+} else {
+    Serial.println("LittleFS OK");
+}
+Serial.println("=== LITTLEFS FILES ===");
+Serial.printf("Total bytes: %u\n", LittleFS.totalBytes());
+Serial.printf("Used bytes : %u\n", LittleFS.usedBytes());
+File test = LittleFS.open("/index.html", "r");
+Serial.println(test ? "INDEX OPEN OK" : "INDEX OPEN FAIL");
+
+
+File root = LittleFS.open("/");
+File file = root.openNextFile();
+
+while (file) {
+    Serial.println(file.name());
+    file = root.openNextFile();
+}
+
+Serial.println("======================");
 
   EEPROM.begin(EEPROM_SIZE);
 
