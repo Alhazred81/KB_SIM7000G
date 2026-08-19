@@ -19,16 +19,17 @@ String htmlHead(const String& title, const String& active_id) {
   s += "<link rel='stylesheet' href='/s.css'>";
   s += "</head><body>";
   
-  // Fixen rögzített felső menüsor színes ikonokkal
+// Fixen rögzített felső menüsor színes ikonokkal
   s += "<nav>";
   s += "<a href='/'" + String(active_id=="1"?" class='on'":"") + "><span style='color:#ffcc00;'>&#127968;</span> Főoldal</a>";
+  s += "<a href='/hives'" + String(active_id=="9"?" class='on'":"") + "><span style='color:#ffcc00;'>&#128029;</span> Kaptárak</a>"; // <-- EZT ILLESD BE
   s += "<a href='/gsm'" + String(active_id=="2"?" class='on'":"") + "><span style='color:#00cc66;'>&#128241;</span> GSM</a>";
   s += "<a href='/iot'" + String(active_id=="3"?" class='on'":"") + "><span style='color:#3399ff;'>&#127760;</span> IoT</a>";
   s += "<a href='/gnss'" + String(active_id=="6"?" class='on'":"") + "><span style='color:#ff9900;'>&#128752;</span> GNSS</a>";
   s += "<a href='/sensors'" + String(active_id=="7"?" class='on'":"") + "><span style='color:#ff3366;'>&#127777;</span> Szenzor</a>";
   s += "<a href='/cfg'" + String(active_id=="4"?" class='on'":"") + "><span style='color:#cc99ff;'>&#9881;</span> Konfig</a>";
   s += "<a href='/expert'" + String(active_id=="8"?" class='on'":"") + "><span style='color:#ffcc00;'>&#9888;</span> Expert</a>";
-  s += "<a href='/diag'" + String(active_id=="5"?" class='on'":"") + "><span style='color:#00ffff;'>&#129658;</span> Diag</a>"; // Sztetoszkóp ikon
+  s += "<a href='/diag'" + String(active_id=="5"?" class='on'":"") + "><span style='color:#00ffff;'>&#129658;</span> Diag</a>";
   s += "</nav><div class='wrap'>";
   
   return s;

@@ -73,6 +73,7 @@
 #define ADDR_GNSS_ASSIST_LON  231 //  4 byte float
 #define ADDR_SMS_INBOX_LIMIT  235 //  1 byte
 #define ADDR_NTFY_STARTUP 236 // 1 byte (0xA5 = allowed, anything else = not allowed)
+#define ADDR_REPORT_TIMES 237   // 16 byte a riport időpontoknak (pl. "08:00; 14:00; 21:00")
 
 // ─── Szenzor beallitasok EEPROM cimei (256-tol) ─────────────
 // 256      – flag (0xA5 = mentve)

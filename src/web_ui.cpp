@@ -6,6 +6,7 @@
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <EEPROM.h>
 #include "config.h"
 #include "gnss_mgr.h"
 #include "modem_mgr.h"
@@ -60,6 +61,9 @@ extern String macSuffix();
 
 // Ideiglenes memória a sikeresen tesztelt, de még nem mentett PIN-nek
 static String gLastValidPin = "";
+static int gLastSentMinute = -1;
+
+String gReportTimes = "21:00";
 
 // PIN ellenőrző segédfüggvény a védett oldalakhoz
 bool checkPinGuard() {
@@ -354,6 +358,36 @@ void handleIot() {
   html += "<button class='sec'>Ping indítása</button></form>";
   if (gData.pingResult.length()) html += "<div class='msg " + String(gData.pingOk ? "ok" : "err") + "' style='margin-top:10px'>" + htmlEscape(gData.pingResult) + "</div>";
   html += "</div>";
+
+  // --- NAPI RIPORT IDŐPONTOK KÁRTYA (VALIDÁCIÓVAL) ---
+  html += "<div class='card wide'><h2>📊 Napi Riport Időpontok (ntfy)</h2>"
+          "<form action='/save-report' method='POST' onsubmit='return validateReportTimes()'>"
+          "<label>Riport időpontok (HH:MM formátumban, ;-vel elválasztva)</label>"
+          "<input type='text' name='report_times' id='reportTimesInput' value='" + (gReportTimes.length() ? gReportTimes : "21:00") + "' placeholder='pl. 08:00; 14:00; 21:00' required>"
+          "<div id='timeError' style='color:var(--err); font-size:11px; margin-bottom:8px; display:none;'>Hibás formátum! Használd a HH:MM; HH:MM mintát (pl. 08:00; 21:00).</div>"
+          "<p class='hint'>Az alapértelmezett beállítás este 21:00-kor küld jelentést. Több időpontot is megadhatsz pontosvesszővel elválasztva.</p>"
+          "<button style='margin-top:4px'>Riport Konfig Mentése</button>"
+          "</form>"
+          "<form action='/test-report' method='POST' style='margin-top:10px'>"
+          "<button class='sec'>🚀 Tesztriport küldése azonnal</button>"
+          "</form></div>"
+          
+          "<script>"
+          "function validateReportTimes() {"
+          "  var val = document.getElementById('reportTimesInput').value.trim();"
+          "  var parts = val.split(';');"
+          "  var regex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;"
+          "  for(var i=0; i<parts.length; i++) {"
+          "    var t = parts[i].trim();"
+          "    if(!regex.test(t)) {"
+          "      document.getElementById('timeError').style.display = 'block';"
+          "      return false;"
+          "    }"
+          "  }"
+          "  document.getElementById('timeError').style.display = 'none';"
+          "  return true;"
+          "}"
+          "</script>";
 
   html += "<div class='card wide'><h2>ntfy Értesítések</h2>";
   html += "<form action='/ntfy-send' method='POST'>";
@@ -811,59 +845,125 @@ void handleSensToggle() {
   server.send(200, "text/plain", "ok");
 }
 
-void handleSensStatus() {
-  String json = "{";
-  json += sensStatusJsonEntry("windspeed", gWindSpeed.enabled, gWindSpeed.lastGoodRead>0, gWindSpeed.lastReadOk, windSpeedValueText()) + ",";
-  json += sensStatusJsonEntry("winddir", gWindDir.enabled, gWindDir.lastGoodRead>0, gWindDir.lastReadOk, windDirValueText()) + ",";
-  json += sensStatusJsonEntry("sht", gSht.enabled, gSht.lastGoodRead>0, gSht.lastReadOk, shtValueText()) + ",";
-  json += sensStatusJsonEntry("rain", gRain.enabled, gRain.lastPoll>0, true, rainValueText()) + ",";
-  json += sensStatusJsonEntry("mpu", gMpu.enabled, gMpu.lastGoodRead>0, gMpu.lastReadOk, mpuValueText()) + ",";
-  json += sensStatusJsonEntry("ahtbmp", gAhtBmp.enabled, gAhtBmp.lastGoodRead>0, gAhtBmp.lastReadOk, ahtBmpValueText()) + ",";
-  json += sensStatusJsonEntry("ltr", gLtr.enabled, gLtr.lastGoodRead>0, gLtr.lastReadOk, ltrValueText());
-  json += "}";
-  server.send(200, "application/json", json);
+void saveReportConfig(const String& times) {
+  for (int i = 0; i < 16; i++) {
+    char c = (i < times.length()) ? times[i] : 0;
+    EEPROM.write(ADDR_REPORT_TIMES + i, c);
+  }
+  EEPROM.commit();
 }
 
-void handleSensConfig() {
-  if(server.hasArg("baud")) {
-    long b = server.arg("baud").toInt();
-    if(b >= 1200 && b <= 921600) {
-      gSensRs485Baud = (uint32_t)b;
-      if(gRs485Initialized) { rs485Init(); }
+String loadReportConfig() {
+  String times = "";
+  for (int i = 0; i < 16; i++) {
+    char c = EEPROM.read(ADDR_REPORT_TIMES + i);
+    if (c == 0) break;
+    times += c;
+  }
+  return times.length() > 0 ? times : "21:00";
+}
+
+void handleSaveReport() {
+  if (!server.hasArg("report_times")) {
+    server.sendHeader("Location", "/iot");
+    server.send(302);
+    return;
+  }
+  
+  String rTimes = server.arg("report_times");
+  rTimes.trim();
+
+  gReportTimes = rTimes.length() ? rTimes : "21:00";
+
+  saveReportConfig(gReportTimes);
+
+  diagAdd("Riport időpontok mentve EEPROM-ba: " + gReportTimes);
+  server.sendHeader("Location", "/iot");
+  server.send(302);
+}
+
+void handleTestReport() {
+  if (sendModemBusyPage("Tesztriport", "3", "/iot")) return;
+
+  String reportMsg = "🐝 **Kaptár Állapot Riport** \n\n";
+  reportMsg += "| Azonosító | Család | Monitor | Beavatkozás |\n";
+  reportMsg += "| :--- | :--- | :--- | :--- |\n";
+  reportMsg += "| A1B2 | Rendben | OK | 🟡 5 nap |\n";
+  reportMsg += "| C3D4 | Ellenőrzés | Gyenge jel | 🟠 2 nap |\n";
+  reportMsg += "| E5F6 | Etetés | ⚠️ Akku (10%) | 🔴 Holnap |\n";
+  reportMsg += "| G7H8 | Kezelés | ❌ Szenzor hiba | 🟣 Ma |\n";
+  reportMsg += "| DEAD | 🔥 Hans | OFFLINE | 🔥 Hans |\n";
+
+  String nick = gNtfyNickname;
+  if (nick.length() == 0) nick = "szerver-" + macSuffix();
+
+  int priorityVal = (reportMsg.indexOf("Hans") >= 0 || reportMsg.indexOf("🔥") >= 0) ? 5 : 2;
+
+  bool ok = ntfy.send(reportMsg.c_str(), nick.c_str(), static_cast<NtfyPriority>(priorityVal));
+
+  if (ok) {
+    diagAdd("Tesztriport elküldve " + String(priorityVal) + "-ös prioritással.");
+  } else {
+    diagAdd("Tesztriport küldési hiba!");
+  }
+
+  server.sendHeader("Location", "/iot");
+  server.send(302);
+}
+
+void checkAndSendScheduledReport() {
+  if (!gTime.synced || gTime.localTime.length() < 5) return;
+
+  String currentTimeStr = "";
+  if (gTime.localTime.length() >= 5) {
+    int colonIdx = gTime.localTime.indexOf(':');
+    if (colonIdx >= 2) {
+      currentTimeStr = gTime.localTime.substring(colonIdx - 2, colonIdx + 3);
     }
   }
-  if(server.hasArg("addr_windspeed")) {
-    int v = server.arg("addr_windspeed").toInt();
-    if(v >= 1 && v <= 247) gWindSpeed.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_winddir")) {
-    int v = server.arg("addr_winddir").toInt();
-    if(v >= 1 && v <= 247) gWindDir.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_sht")) {
-    int v = server.arg("addr_sht").toInt();
-    if(v >= 1 && v <= 247) gSht.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_rain")) {
-    int v = server.arg("addr_rain").toInt();
-    if(v >= 1 && v <= 247) gRain.modbusAddr = (uint8_t)v;
-  }
-  gRain.isModbus = server.hasArg("rain_modbus");
 
-  saveSensorConfig();
-  diagAdd("Szenzor RS485/Modbus beallitasok mentve.");
-  server.sendHeader("Location","/sensors");
-  server.send(302);
-}
+  if (currentTimeStr.length() != 5) return;
 
-void handleSensTest() {
-  if(!server.hasArg("which")) {
-    server.sendHeader("Location","/sensors"); server.send(302); return;
+  int currentTotalMins = currentTimeStr.substring(0, 2).toInt() * 60 + currentTimeStr.substring(3, 5).toInt();
+  if (currentTotalMins == gLastSentMinute) return;
+
+  String timesCopy = gReportTimes;
+  while (timesCopy.length() > 0) {
+    int semiIdx = timesCopy.indexOf(';');
+    String singleTime = (semiIdx >= 0) ? timesCopy.substring(0, semiIdx) : timesCopy;
+    singleTime.trim();
+    
+    if (singleTime.length() == 5 && singleTime == currentTimeStr) {
+      diagAdd("Időzített napi riport indítása (" + singleTime + ")");
+      
+      String reportMsg = "🐝 **Kaptár Állapot Riport (Ütemezett)** \n\n";
+      reportMsg += "| Azonosító | Család | Monitor | Beavatkozás |\n";
+      reportMsg += "| :--- | :--- | :--- | :--- |\n";
+      reportMsg += "| A1B2 | Rendben | OK (100%) | 🟡 5 nap |\n";
+      reportMsg += "| C3D4 | Ellenőrzés | OK (50%) | 🟠 2 nap |\n";
+      reportMsg += "| E5F6 | Etetés | ⚠️ Akku (10%) | 🔴 Holnap |\n";
+      reportMsg += "| G7H8 | Kezelés | ❌ Szenzor hiba | 🟣 Ma |\n";
+      reportMsg += "| DEAD | 🔥 Hans | OFFLINE | 🔥 Hans |\n";
+
+      String nick = gNtfyNickname;
+      if (nick.length() == 0) nick = "szerver-" + macSuffix();
+
+      int priorityVal = (reportMsg.indexOf("Hans") >= 0 || reportMsg.indexOf("🔥") >= 0) ? 5 : 2;
+
+      bool ok = ntfy.send(reportMsg.c_str(), nick.c_str(), static_cast<NtfyPriority>(priorityVal));
+      if (ok) {
+        diagAdd("Ütemezett riport sikeresen elküldve (" + singleTime + ").");
+      } else {
+        diagAdd("Ütemezett riport küldési hiba!");
+      }
+
+      gLastSentMinute = currentTotalMins;
+      break;
+    }
+
+    if (semiIdx < 0) break;
+    timesCopy = timesCopy.substring(semiIdx + 1);
   }
-  sensTestRun(server.arg("which"));
-  diagAdd("Szenzor teszt (" + server.arg("which") + "): " + gLastSensTestResult);
-  server.sendHeader("Location","/sensors");
-  server.send(302);
 }
 
 void handleGnssStatus() {
@@ -915,7 +1015,6 @@ void handleGnss() {
   html += "<button class='sec'>Koordinata mentese</button></form>";
   html += "</div>";
 
-  // --- GNSS LIVE DEBUG KÁRTYA ---
   html += "<div class='card diag-card wide'><h2>🛰 GNSS Live Debug</h2>";
   html += "<div class='diag' id='gnssDebugBox' style='max-height:200px; overflow-y:auto; font-size:11px;'>Betöltés...</div>";
   html += "<script>";
@@ -1046,6 +1145,126 @@ void handleGnssCtl() {
   server.sendHeader("Location","/gnss");
   server.send(302);
 }
+
+void handleHives() {
+  if (!checkPinGuard()) return;
+  String html = htmlHead("Kaptárak", "9");
+
+  html += "<style>"
+          "@keyframes flammenwerfer { 0% { opacity: 1; background-color: rgba(255,0,0,0.3); } 50% { opacity: 0.4; background-color: rgba(255,0,0,0.8); } 100% { opacity: 1; background-color: rgba(255,0,0,0.3); } }"
+          "@keyframes mapIconPulse { 0% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(255,0,0,0.8)); } 50% { transform: scale(1.25); filter: drop-shadow(0 0 12px rgba(255,0,0,1)); } 100% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(255,0,0,0.8)); } }"
+          ".hive-pulse { animation: mapIconPulse 0.8s infinite ease-in-out; transform-origin: center; }"
+          ".hive-table-container { max-height: 450px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }"
+          "table.hive-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }"
+          "table.hive-table th { position: sticky; top: 0; background: var(--nav); color: var(--txt); padding: 10px; border-bottom: 2px solid var(--border); z-index: 2; }"
+          "table.hive-table td { padding: 10px; border-bottom: 1px solid var(--border); }"
+          ".badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; }"
+          ".b-ok { background: rgba(0,204,102,0.2); color: var(--ok); }"
+          ".b-yell { background: rgba(255,255,0,0.2); color: #e6e600; }"
+          ".b-org { background: rgba(255,165,0,0.2); color: #ffa500; }"
+          ".b-red { background: rgba(255,0,0,0.2); color: #ff3333; }"
+          ".b-cyc { background: rgba(255,0,255,0.2); color: #ff00ff; }"
+          ".b-flame { background: rgba(255,0,0,0.5); color: #fff; animation: flammenwerfer 0.8s infinite; }"
+          ".dim { color: var(--txt2); font-size: 12px; }"
+          ".custom-hive-icon { background: transparent; border: none; }"
+          "</style>";
+
+  html += "<div class='card wide' style='grid-column:1/-1'>"
+          "<h2>🗺 Kaptárak Térképes Áttekintése</h2>"
+          "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
+          "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
+          "<div id='hiveMap' style='height:350px;border-radius:8px;margin-top:6px;z-index:1'></div>"
+          "<script>"
+          "var osmLayerH = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});"
+          "var satLayerH = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'});"
+          
+          "var hiveMap = L.map('hiveMap', {center: [47.514600, 19.043500], zoom: 15, layers: [osmLayerH]});"
+          "var baseLayersH = {'Utca': osmLayerH, 'Műhold': satLayerH};"
+          "L.control.layers(baseLayersH).addTo(hiveMap);"
+
+          "function getQueenColor(year) {"
+          "  var lastDigit = year % 10;"
+          "  if (lastDigit === 1 || lastDigit === 6) return '#FFFFFF';"
+          "  if (lastDigit === 2 || lastDigit === 7) return '#FFFF00';"
+          "  if (lastDigit === 3 || lastDigit === 8) return '#FF0000';"
+          "  if (lastDigit === 4 || lastDigit === 9) return '#00FF00';"
+          "  return '#0000FF';"
+          "}"
+
+          "function getInterventionColor(days) {"
+          "  if (days === 'hans') return '#FF0000';"
+          "  if (days > 3) return '#FFFF00';"
+          "  if (days > 1) return '#FFA500';"
+          "  if (days === 1) return '#FF0000';"
+          "  if (days === 0) return '#FF00FF';"
+          "  return '#00CC66';"
+          "}"
+
+          "function createSquareHiveIcon(days, queenYear, isCritical, hasSensorErr, batPct) {"
+          "  var qColor = getQueenColor(queenYear);"
+          "  var statusColor = getInterventionColor(days);"
+          "  var pulseClass = isCritical ? ' hive-pulse' : '';"
+          
+          "  var errSvg = hasSensorErr ? '<circle cx=\"24\" cy=\"24\" r=\"9\" fill=\"#FF0000\" stroke=\"#2a2a40\" stroke-width=\"2\"/><text x=\"24\" y=\"28\" fill=\"white\" font-size=\"11\" font-family=\"sans-serif\" font-weight=\"bold\" text-anchor=\"middle\">!</text>' : '';"
+          
+          "  var batWidth = (batPct / 100) * 20;"
+          "  var batColor = batPct > 20 ? '#00FF00' : '#FF0000';"
+          "  var batSvg = '<rect x=\"40\" y=\"68\" width=\"20\" height=\"8\" fill=\"#333\" stroke=\"#2a2a40\" stroke-width=\"1.5\" rx=\"1\"/><rect x=\"40\" y=\"68\" width=\"' + batWidth + '\" height=\"8\" fill=\"' + batColor + '\" rx=\"1\"/><rect x=\"60\" y=\"70\" width=\"2\" height=\"4\" fill=\"#2a2a40\"/>';"
+
+          "  var svg = '<svg class=\"' + pulseClass.trim() + '\" viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">' +"
+          "    '<rect x=\"10\" y=\"10\" width=\"80\" height=\"80\" fill=\"' + statusColor + '\" stroke=\"#2a2a40\" stroke-width=\"6\" rx=\"12\"/>' +"
+          "    '<circle cx=\"50\" cy=\"44\" r=\"14\" fill=\"' + qColor + '\" stroke=\"#2a2a40\" stroke-width=\"3\"/>' +"
+          "    errSvg + batSvg +"
+          "  '</svg>';"
+          "  return L.divIcon({ className: 'custom-hive-icon', html: svg, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });"
+          "}"
+
+          "var markers = [];"
+          
+          "var hivesData = ["
+          "  {lat: 47.5146, lon: 19.0435, id: 'A1B2', famStat: 'Rendben', monStat: 'OK', days: 5, err: false, bat: 100, year: 2024, critical: false},"
+          "  {lat: 47.5155, lon: 19.0412, id: 'C3D4', famStat: 'Ellenőrzés', monStat: 'Gyenge jel', days: 2, err: false, bat: 50, year: 2023, critical: false},"
+          "  {lat: 47.5132, lon: 19.0458, id: 'E5F6', famStat: 'Etetés', monStat: 'Alacsony akku (10%)', days: 1, err: false, bat: 10, year: 2022, critical: false},"
+          "  {lat: 47.5121, lon: 19.0405, id: 'G7H8', famStat: 'Atkakezelés', monStat: 'Szenzor hiba', days: 0, err: true, bat: 90, year: 2021, critical: false},"
+          "  {lat: 47.5150, lon: 19.0495, id: 'DEAD', famStat: '🔥 Hans', monStat: 'OFFLINE', days: 'hans', err: true, bat: 0, year: 2023, critical: true}"
+          "];"
+
+          "hivesData.forEach(function(h) {"
+          "  var m = L.marker([h.lat, h.lon], {icon: createSquareHiveIcon(h.days, h.year, h.critical, h.err, h.bat)}).addTo(hiveMap)"
+          "    .bindPopup('<b>Kaptár: ' + h.id + '</b><br>Család: ' + h.famStat + '<br>Monitor: ' + h.monStat);"
+          "  markers.push(m);"
+          "});"
+
+          "if(markers.length > 0) {"
+          "  var group = L.featureGroup(markers);"
+          "  hiveMap.fitBounds(group.getBounds().pad(0.2));"
+          "}"
+
+          "</script></div>";
+
+  html += "<div class='card wide'><h2>Állapot és Beavatkozási Ütemterv</h2>";
+  html += "<p class='hint'>Sárga: 3 napon túl | Narancs: 3 napon belül | Piros: Holnap | Ciklámen: Ma | 🔥 Hans: Kritikus.</p>";
+  html += "<div class='hive-table-container'>";
+  html += "<table class='hive-table'>";
+  html += "<thead><tr>"
+          "<th>Azonosító</th>"
+          "<th>Család állapota</th>"
+          "<th>Monitor állapota</th>"
+          "<th>Beavatkozás</th>"
+          "</tr></thead>";
+  html += "<tbody>";
+
+  html += "<tr><td>A1B2</td><td>Rendben</td><td>OK</td><td><span class='badge b-yell'>5 nap múlva</span></td></tr>";
+  html += "<tr><td>C3D4</td><td>Ellenőrzés</td><td>Jelerősség gyenge</td><td><span class='badge b-org'>2 nap múlva</span></td></tr>";
+  html += "<tr><td>E5F6</td><td>Etetés</td><td><span style='color:var(--err)'>Alacsony akku (10%)</span></td><td><span class='badge b-red'>Holnap</span></td></tr>";
+  html += "<tr><td>G7H8</td><td>Atkakezelés</td><td><span style='color:var(--err)'>Szenzor olvasási hiba</span></td><td><span class='badge b-cyc'>Ma (Azonnal)</span></td></tr>";
+  html += "<tr><td>DEAD</td><td><span class='badge b-flame'>🔥 Hans</span></td><td>OFFLINE</td><td><span class='badge b-flame'>🔥 Hans</span></td></tr>";
+
+  html += "</tbody></table></div></div>";
+  html += htmlFoot();
+  
+  server.send(200, "text/html", html);
+} 
 
 void handleExpert() {
   if (!checkPinGuard()) return;
@@ -1771,6 +1990,61 @@ void handleExpertFullReset() {
   server.send(302);
 }
 
+void handleSensStatus() {
+  String json = "{";
+  json += sensStatusJsonEntry("windspeed", gWindSpeed.enabled, gWindSpeed.lastGoodRead>0, gWindSpeed.lastReadOk, windSpeedValueText()) + ",";
+  json += sensStatusJsonEntry("winddir", gWindDir.enabled, gWindDir.lastGoodRead>0, gWindDir.lastReadOk, windDirValueText()) + ",";
+  json += sensStatusJsonEntry("sht", gSht.enabled, gSht.lastGoodRead>0, gSht.lastReadOk, shtValueText()) + ",";
+  json += sensStatusJsonEntry("rain", gRain.enabled, gRain.lastPoll>0, true, rainValueText()) + ",";
+  json += sensStatusJsonEntry("mpu", gMpu.enabled, gMpu.lastGoodRead>0, gMpu.lastReadOk, mpuValueText()) + ",";
+  json += sensStatusJsonEntry("ahtbmp", gAhtBmp.enabled, gAhtBmp.lastGoodRead>0, gAhtBmp.lastReadOk, ahtBmpValueText()) + ",";
+  json += sensStatusJsonEntry("ltr", gLtr.enabled, gLtr.lastGoodRead>0, gLtr.lastReadOk, ltrValueText());
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
+void handleSensConfig() {
+  if(server.hasArg("baud")) {
+    long b = server.arg("baud").toInt();
+    if(b >= 1200 && b <= 921600) {
+      gSensRs485Baud = (uint32_t)b;
+      if(gRs485Initialized) { rs485Init(); }
+    }
+  }
+  if(server.hasArg("addr_windspeed")) {
+    int v = server.arg("addr_windspeed").toInt();
+    if(v >= 1 && v <= 247) gWindSpeed.modbusAddr = (uint8_t)v;
+  }
+  if(server.hasArg("addr_winddir")) {
+    int v = server.arg("addr_winddir").toInt();
+    if(v >= 1 && v <= 247) gWindDir.modbusAddr = (uint8_t)v;
+  }
+  if(server.hasArg("addr_sht")) {
+    int v = server.arg("addr_sht").toInt();
+    if(v >= 1 && v <= 247) gSht.modbusAddr = (uint8_t)v;
+  }
+  if(server.hasArg("addr_rain")) {
+    int v = server.arg("addr_rain").toInt();
+    if(v >= 1 && v <= 247) gRain.modbusAddr = (uint8_t)v;
+  }
+  gRain.isModbus = server.hasArg("rain_modbus");
+
+  saveSensorConfig();
+  diagAdd("Szenzor RS485/Modbus beallitasok mentve.");
+  server.sendHeader("Location","/sensors");
+  server.send(302);
+}
+
+void handleSensTest() {
+  if(!server.hasArg("which")) {
+    server.sendHeader("Location","/sensors"); server.send(302); return;
+  }
+  sensTestRun(server.arg("which"));
+  diagAdd("Szenzor teszt (" + server.arg("which") + "): " + gLastSensTestResult);
+  server.sendHeader("Location","/sensors");
+  server.send(302);
+}
+
 void webBegin() {
   server.on("/",           HTTP_GET,  handleRoot);
   server.on("/app.js",        HTTP_GET,  handleJs);
@@ -1829,11 +2103,15 @@ void webBegin() {
   server.on("/modemstatus",   HTTP_GET,  handleModemStatus);
   server.on("/reinit",        HTTP_POST, handleReinit);
 
+  server.on("/hives",         HTTP_GET, handleHives);
+  server.on("/test-report",   HTTP_POST, handleTestReport);
   server.on("/netauto",       HTTP_POST, handleNetAuto);
   server.on("/netscan",       HTTP_POST, handleNetScan);
   server.on("/netmanual",     HTTP_POST, handleNetManual);
 
   server.on("/esprestart",    HTTP_POST, handleEspRestart);
+
+  server.on("/save-report",   HTTP_POST, handleSaveReport);
 
   server.onNotFound(handleNotFound);
 

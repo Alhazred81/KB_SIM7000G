@@ -22,7 +22,13 @@
 #include "web_ui.h"
 #include "wifi_sta.h"
 
+
+
 // ─── Globálisok ─────────────────────────────────────────────
+
+extern String gReportTimes;
+void checkAndSendScheduledReport();
+String loadReportConfig();
 HardwareSerial modemSerial(1);
 TinyGsm        modem(modemSerial);
 bool gStartupNtfySent = false;
@@ -60,6 +66,8 @@ String         gSmsPendingText   = "";
 bool           gSmsSendInProgress = false;
 bool           gSmsSendDone       = false;
 String         gSmsSendResult     = ""; 
+String         loadReportConfig();
+extern String gReportTimes;
 
 void loadSmsInboxLimit() {
   // Ha EEPROM-ból olvasod, itt kell betölteni, 
@@ -272,6 +280,7 @@ void setup() {
   sensorsApplyEnabled();
   loadNtfyConfig();
 
+  gReportTimes = loadReportConfig();
   gApPass    = loadApPass();
   gApChannel = EEPROM.read(ADDR_CHANNEL);
   if(gApChannel < 1 || gApChannel > 13) gApChannel = DEFAULT_CHANNEL;
@@ -326,6 +335,13 @@ void loop() {
   smsInboxLoop();
   sensorsLoop();
 
+
+  //időzített riport ellenőrzése és küldése
+  static unsigned long lastReportCheck = 0;
+  if (millis() - lastReportCheck > 15000) { // 15 másodpercenként ellenőrzi
+  lastReportCheck = millis();
+  checkAndSendScheduledReport();
+  }
   // --- ÚJ: Rendszerindítási értesítés küldése NTP és aktív net után ---
   if (!gStartupNtfySent && gTime.synced && gData.active) {
     gStartupNtfySent = true; // Akkor is letiltjuk a további próbálkozást erre a bootra, ha ki van kapcsolva
