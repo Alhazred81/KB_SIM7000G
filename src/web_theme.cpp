@@ -1,31 +1,34 @@
+//web_theme.cpp
+
 #include "web_theme.h"
 #include "web_common.h"
 #include <Arduino.h>
 #include <WebServer.h>
 
 extern WebServer server;
+extern String macSuffix();
 
 // ─── HTML Fejléc és Navigációs menü ───────────────────────────
 String htmlHead(const String& title, const String& active_id) {
+  String tabTitle = "KB-szerver-" + macSuffix() + " - " + htmlEscape(title);
   String s = "<!doctype html><html lang='hu'><head><meta charset='utf-8'>";
   s += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   s += "<meta name='theme-color' content='#0d0d1a'>";
-  // Méhecske ikon (favicon) data-uri formátumban
   s += "<link rel='icon' href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>\">";
-  s += "<title>Kaptármonitor - " + htmlEscape(title) + "</title>";
+  s += "<title>" + tabTitle + "</title>";
   s += "<link rel='stylesheet' href='/s.css'>";
   s += "</head><body>";
   
-  // Fixen rögzített felső menüsor
+  // Fixen rögzített felső menüsor színes ikonokkal
   s += "<nav>";
-  s += "<a href='/'" + String(active_id=="1"?" class='on'":"") + ">&#127968; Főoldal</a>";
-  s += "<a href='/gsm'" + String(active_id=="2"?" class='on'":"") + ">&#128241; GSM</a>";
-  s += "<a href='/iot'" + String(active_id=="3"?" class='on'":"") + ">&#127760; Internet</a>";
-  s += "<a href='/gnss'" + String(active_id=="6"?" class='on'":"") + ">&#128640; GPS</a>";
-  s += "<a href='/sensors'" + String(active_id=="7"?" class='on'":"") + ">&#127777; Szenzor</a>";
-  s += "<a href='/cfg'" + String(active_id=="4"?" class='on'":"") + ">&#9881; Konfig</a>";
-  s += "<a href='/expert'" + String(active_id=="8"?" class='on'":"") + ">&#9888; Expert</a>";
-  s += "<a href='/diag'" + String(active_id=="5"?" class='on'":"") + ">&#128269; Diag</a>";
+  s += "<a href='/'" + String(active_id=="1"?" class='on'":"") + "><span style='color:#ffcc00;'>&#127968;</span> Főoldal</a>";
+  s += "<a href='/gsm'" + String(active_id=="2"?" class='on'":"") + "><span style='color:#00cc66;'>&#128241;</span> GSM</a>";
+  s += "<a href='/iot'" + String(active_id=="3"?" class='on'":"") + "><span style='color:#3399ff;'>&#127760;</span> IoT</a>";
+  s += "<a href='/gnss'" + String(active_id=="6"?" class='on'":"") + "><span style='color:#ff9900;'>&#128752;</span> GNSS</a>";
+  s += "<a href='/sensors'" + String(active_id=="7"?" class='on'":"") + "><span style='color:#ff3366;'>&#127777;</span> Szenzor</a>";
+  s += "<a href='/cfg'" + String(active_id=="4"?" class='on'":"") + "><span style='color:#cc99ff;'>&#9881;</span> Konfig</a>";
+  s += "<a href='/expert'" + String(active_id=="8"?" class='on'":"") + "><span style='color:#ffcc00;'>&#9888;</span> Expert</a>";
+  s += "<a href='/diag'" + String(active_id=="5"?" class='on'":"") + "><span style='color:#00ffff;'>&#129658;</span> Diag</a>"; // Sztetoszkóp ikon
   s += "</nav><div class='wrap'>";
   
   return s;

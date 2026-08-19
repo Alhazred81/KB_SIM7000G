@@ -970,8 +970,14 @@ void handleGnss() {
           "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
           "<div id='map' style='height:260px;border-radius:8px;margin-top:6px;z-index:1'></div>"
           "<script>"
-          "var map = L.map('map').setView([" + String(latS) + ", " + String(lonS) + "], 15);"
-          "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'}).addTo(map);"
+          "var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});"
+          "var satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'});"
+          
+          "var map = L.map('map', {center: [" + String(latS) + ", " + String(lonS) + "], zoom: 15, layers: [osmLayer]});"
+          
+          "var baseLayers = {'Utca': osmLayer, 'Műhold': satLayer};"
+          "L.control.layers(baseLayers).addTo(map);"
+
           "var marker = L.marker([" + String(latS) + ", " + String(lonS) + "]).addTo(map)"
             ".bindPopup('" + String(gGnss.fix ? "Aktuális fix" : "Kiinduló hely") + "').openPopup();"
           "var lastLat = " + String(latS) + ", lastLon = " + String(lonS) + ", lastFix = " + String(gGnss.fix ? "true" : "false") + ";"
