@@ -50,7 +50,7 @@ void ntpLoop() {
 
     if(firstSync) {
       Serial.println("[NTP] Ido szinkron OK: " + gTime.localTime);
-      modemSetTimeFromSystem();
+      modemSetTimeFromSystem(); // <-- EZ KÜldi ÁT A MODEMBE ÉS A GNSS-NEK A PONTOS IDŐT!
     }
   }
 }

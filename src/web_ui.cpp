@@ -1,3 +1,5 @@
+//web_ui.cpp
+
 #include "web_ui.h"
 #include <Arduino.h>
 #include <WebServer.h>
@@ -397,7 +399,7 @@ void handleEspRestart() {
   server.send(200, "text/html", html);
   
   diagAdd("ESP32 kézi újraindítás webes felületről.");
-  delay(1000); // Hagy időt, hogy a válasz elmenjen a böngészőbe
+  delay(1000); 
   ESP.restart();
 }
 
@@ -913,6 +915,26 @@ void handleGnss() {
   html += "<button class='sec'>Koordinata mentese</button></form>";
   html += "</div>";
 
+  // --- GNSS LIVE DEBUG KÁRTYA ---
+  html += "<div class='card diag-card wide'><h2>🛰 GNSS Live Debug</h2>";
+  html += "<div class='diag' id='gnssDebugBox' style='max-height:200px; overflow-y:auto; font-size:11px;'>Betöltés...</div>";
+  html += "<script>";
+  html += "function pollGnssDebug(){";
+  html += "  fetch('/gnssstatus').then(function(r){return r.json();}).then(function(d){";
+  html += "    var txt = 'Engedélyezve: ' + (d.enabled ? 'BE' : 'KI') + '\\n';";
+  html += "    txt += 'Fix: ' + (d.fix ? 'VAN' : 'NINCS') + '\\n';";
+  html += "    txt += 'Használt műholdak: ' + d.satUsed + '\\n';";
+  html += "    txt += 'Látható holdak: ' + d.satView + '\\n';";
+  html += "    txt += 'HDOP: ' + d.hdop + '\\n';";
+  html += "    txt += 'Lat/Lon: ' + d.lat + ', ' + d.lon + '\\n';";
+  html += "    document.getElementById('gnssDebugBox').innerText = txt;";
+  html += "  }).catch(function(){});";
+  html += "}";
+  html += "setInterval(pollGnssDebug, 2000);";
+  html += "pollGnssDebug();";
+  html += "</script>";
+  html += "</div>";
+
   if(!gGnss.enabled){
     html += "<div class='card'><h2>GNSS kikapcsolva</h2>"
             "<form action='/gnssctl' method='POST'>"
@@ -1230,7 +1252,6 @@ function doScan(){
   }
   html += "</select><button>Mentes & ujraindulas</button></form></div>";
 
-  // --- ITT FRISSÜLT AZ NTFY KÁRTYA CSÚSZKÁS KAPCSOLÓRA ---
   html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
           "<form action='/save-ntfy' method='POST'>"
           "<label>ntfy Szerver</label>"
@@ -1806,7 +1827,7 @@ void webBegin() {
   server.on("/netscan",       HTTP_POST, handleNetScan);
   server.on("/netmanual",     HTTP_POST, handleNetManual);
 
-  server.on("/esprestart", HTTP_POST, handleEspRestart);
+  server.on("/esprestart",    HTTP_POST, handleEspRestart);
 
   server.onNotFound(handleNotFound);
 

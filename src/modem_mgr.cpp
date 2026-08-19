@@ -280,6 +280,12 @@ bool modemInit() {
   modem.sendAT("+CNMI=2,1,0,0,0");
   modem.waitResponse();
 
+// --- ÚJ: Hálózati idő szinkronizálás engedélyezése a GNSS/Modem számára ---
+  modem.sendAT("+CLTS=1");
+  modem.waitResponse();
+  modem.sendAT("&W"); // Konfiguráció mentése a modem flash memóriájába
+  modem.waitResponse();
+
   gModem.initInProgress = false;
   gModem.initPhase = "Kesz - csatlakozva";
   return true;

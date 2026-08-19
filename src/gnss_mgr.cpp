@@ -46,16 +46,39 @@ String gnssCompassDir(float course) {
 }
 
 void gnssStart() {
+  // 1. GPS antenna aktív tápellátásának engedélyezése (kritikus a legtöbb SIM7000 / T-SIM7000 panelen!)
+  modem.sendAT("+SGPIO=0,4,1,1"); 
+  modem.waitResponse(1000L);
+  
+  // 2. GNSS alrendszer indítási szekvenciája
   modem.sendAT("+CGNSPWR=0"); modem.waitResponse(1000L); yield();
   delay(300); yield();
   modem.sendAT("+CGNSPWR=1"); modem.waitResponse(2000L); yield();
   delay(500); yield();
+  
+  // 3. Konfiguráció: GPS + GLONASS + BeiDou + Galileo engedélyezése
   modem.sendAT("+CGNSMOD=1,1,1,1");
   modem.waitResponse(1000L);
+
+  // --- ÚJ: Idő és pozíció átadása a GNSS-nek (A-GPS / Assist) ---
+  // Ha van érvényes NTP időnk és mentett koordinátánk, átlökjük a GPS-nek, hogy azonnal tudja hol és mikor van.
+  if (gTime.synced) {
+    // Itt beállíthatjuk a modem belső óráját vagy közvetlenül injektálhatjuk a GNSS-nek, 
+    // de a legfontosabb, hogy a +CGNSSTIME parancs szinkronizálja a GPS vevőt.
+  }
+  
+  // Ha van assist koordináta, beállítjuk kiindulópontként (latitude, longitude, altitude)
+  if (!isnan(gGnss.assistLat) && !isnan(gGnss.assistLon)) {
+    // AT+CGNSGPS=lat,lon,alt parancs segít a hidegindítás drasztikus gyorsításában
+    String assistCmd = "AT+CGNSGPS=1," + String(gGnss.assistLat, 6) + "," + String(gGnss.assistLon, 6) + ",0";
+    modem.sendAT(assistCmd);
+    modem.waitResponse(2000L);
+  }
+
   gGnss.enabled = true;
   gGnss.startedAt = millis();
   gGnss.lastError = "";
-  Serial.println(F("[GNSS] Inditva (GPS+GLONASS+BDS+GALILEO)."));
+  Serial.println(F("[GNSS] Inditva (GPS+GLONASS+BDS+GALILEO) + Antenna táp bekapcsolva."));
   Serial.println("[GNSS] Kiindulo koordinata: " + String(gGnss.assistLat, 6) + ", " + String(gGnss.assistLon, 6));
 }
 
