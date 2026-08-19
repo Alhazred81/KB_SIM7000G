@@ -154,11 +154,18 @@ bool modemInit() {
     return false;
   }
 
-  diagAddWithTimestamp(F("[MODEM] UART valaszol, restart..."));
-  gModem.initPhase = "Modem ujrainditasa (AT+CFUN reset)...";
+  diagAddWithTimestamp(F("[MODEM] UART valaszol, inicializalas..."));
+  gModem.initPhase = "Modem szoftveres inicializalasa...";
   gModem.initPhaseNum = 3;
-  modem.restart();
-  delay(5000); yield();  
+  
+  if (!modem.init()) {
+    diagAddWithTimestamp(F("[MODEM] Gyors init SIKERTELEN, teljes RESTART kovetkezik..."));
+    gModem.initPhase = "Modem ujrainditasa (AT+CFUN reset)...";
+    modem.restart();
+    delay(5000); yield();  
+  } else {
+    delay(1000); yield();
+  }
 
   gModem.initPhase = "SIM kartya ellenorzese...";
   gModem.initPhaseNum = 4;

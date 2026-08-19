@@ -270,6 +270,7 @@ void setup() {
   loadSmsInboxLimit();
   loadSensorConfig();
   sensorsApplyEnabled();
+  loadNtfyConfig();
 
   gApPass    = loadApPass();
   gApChannel = EEPROM.read(ADDR_CHANNEL);
@@ -327,13 +328,18 @@ void loop() {
 
   // --- ÚJ: Rendszerindítási értesítés küldése NTP és aktív net után ---
   if (!gStartupNtfySent && gTime.synced && gData.active) {
-    gStartupNtfySent = true;
-    diagAdd("NTP szinkronizálva. Ntfy teszt küldés indítása...");
-    bool sent = ntfy.send("A szerver elindult és az idő szinkronizálva van!", "Kaptármonitor Start", NtfyPriority::Default);
-    if (sent) {
-      diagAdd("Ntfy üzenet sikeresen elküldve!");
+    gStartupNtfySent = true; // Akkor is letiltjuk a további próbálkozást erre a bootra, ha ki van kapcsolva
+    
+    if (gNtfyStartupMsg) {
+      diagAdd("NTP szinkronizálva. Ntfy teszt küldés indítása...");
+      bool sent = ntfy.send("A szerver elindult és az idő szinkronizálva van!", "Rendszer Start", NtfyPriority::Default);
+      if (sent) {
+        diagAdd("Ntfy üzenet sikeresen elküldve!");
+      } else {
+        diagAdd("Ntfy küldési hiba!");
+      }
     } else {
-      diagAdd("Ntfy küldési hiba!");
+      diagAdd("Indulási ntfy üzenet letiltva a beállításokban.");
     }
   }
 

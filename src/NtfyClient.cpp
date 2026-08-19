@@ -7,6 +7,7 @@
 String gNtfyTopic = "KB_Teszt_20260813_666"; 
 String gNtfyServer = "http://ntfy.sh"; 
 String gNtfyNickname = ""; 
+bool gNtfyStartupMsg = true;
 
 void loadNtfyConfig() {
   if (LittleFS.exists("/ntfy.cfg")) {
@@ -15,21 +16,27 @@ void loadNtfyConfig() {
       gNtfyServer = f.readStringUntil('\n'); gNtfyServer.trim();
       gNtfyTopic = f.readStringUntil('\n');  gNtfyTopic.trim();
       gNtfyNickname = f.readStringUntil('\n'); gNtfyNickname.trim();
+      
+      String startStr = f.readStringUntil('\n'); startStr.trim();
+      if (startStr.length() > 0) gNtfyStartupMsg = (startStr == "1");
+      
       f.close();
     }
   }
 }
 
-void saveNtfyConfig(const String& server, const String& topic, const String& nickname) {
+void saveNtfyConfig(const String& server, const String& topic, const String& nickname, bool startupMsg) {
   gNtfyServer = server;
   gNtfyTopic = topic;
   gNtfyNickname = nickname;
+  gNtfyStartupMsg = startupMsg;
   
   File f = LittleFS.open("/ntfy.cfg", "w");
   if (f) {
     f.println(gNtfyServer);
     f.println(gNtfyTopic);
     f.println(gNtfyNickname);
+    f.println(gNtfyStartupMsg ? "1" : "0");
     f.close();
   }
 }

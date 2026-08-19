@@ -33,9 +33,10 @@ struct NtfyPollResult {
 extern String gNtfyTopic;
 extern String gNtfyServer;
 extern String gNtfyNickname;
+extern bool gNtfyStartupMsg;
 
 void loadNtfyConfig();
-void saveNtfyConfig(const String& server, const String& topic, const String& nickname);
+void saveNtfyConfig(const String& server, const String& topic, const String& nickname, bool startupMsg);
 
 class NtfyClient {
 public:

@@ -1,10 +1,9 @@
-//web_ui.cpp
-
 #include "web_ui.h"
 #include <Arduino.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include "config.h"
 #include "gnss_mgr.h"
 #include "modem_mgr.h"
@@ -27,7 +26,8 @@ extern LedConfig gLed;
 extern NtfyClient ntfy;
 extern String gNtfyServer;
 extern String gNtfyTopic;
-extern String gNtfyNickname; // ÚJ: Eszközazonosító
+extern String gNtfyNickname;
+extern bool gNtfyStartupMsg;
 extern WindSpeedState gWindSpeed;
 extern WindDirState gWindDir;
 extern ShtSensorState gSht;
@@ -53,8 +53,9 @@ extern String gSmsSendResult;
 extern ScannedNet gScanResults[];
 extern int gScanCount;
 
-extern void saveNtfyConfig(const String& server, const String& topic, const String& nickname);
-extern String macSuffix(); // <--- EZT A SORT ADD HOZZÁ
+extern void saveNtfyConfig(const String& server, const String& topic, const String& nickname, bool startupMsg);
+extern String macSuffix();
+
 // Ideiglenes memória a sikeresen tesztelt, de még nem mentett PIN-nek
 static String gLastValidPin = "";
 
@@ -209,13 +210,32 @@ static String ltrValueText() {
 }
 
 void handleRoot() {
-  if (!LittleFS.exists("/index.html")) {
-    server.send(404, "text/plain", "index.html nem talalhato a LittleFS-en");
-    return;
-  }
-  File f = LittleFS.open("/index.html", "r");
-  server.streamFile(f, "text/html");
-  f.close();
+  if (!checkPinGuard()) return;
+  String html = htmlHead("Áttekintés", "1");
+
+  html += "<div class='card'><h2>Modem Állapot</h2>";
+  html += stateRow("Modem kész", gModem.ready ? "Igen" : "Nem", gModem.ready ? "g" : "r");
+  html += stateRow("Regisztrálva", gModem.registered ? "Igen" : "Nem", gModem.registered ? "g" : "r");
+  html += stateRow("Operátor", gModem.operatorName.length() ? gModem.operatorName : "Ismeretlen");
+  html += stateRow("Jelminőség", String(gModem.signalQuality));
+  html += stateRow("Hálózati típus", gModem.netType.length() ? gModem.netType : "Ismeretlen");
+  html += "</div>";
+
+  html += "<div class='card'><h2>GPS / GNSS Pozíció</h2>";
+  html += stateRow("GPS Fix", gGnss.fix ? "Van Fix" : "Nincs Fix", gGnss.fix ? "g" : "y");
+  html += stateRow("Szélesség", String(gGnss.lat, 6));
+  html += stateRow("Hosszúság", String(gGnss.lon, 6));
+  html += stateRow("Műholdak száma", String(gGnss.satUsed));
+  html += "</div>";
+
+  html += "<div class='card'><h2>Idő & Rendszer</h2>";
+  html += stateRow("Helyi idő", gTime.synced ? gTime.localTime : "Szinkronizálás alatt...", gTime.synced ? "g" : "y");
+  html += stateRow("Szabad memória", String(ESP.getFreeHeap() / 1024) + " KB");
+  html += stateRow("Uptime", String(millis() / 60000) + " perc");
+  html += "</div>";
+
+  html += htmlFoot();
+  server.send(200, "text/html", html);
 }
 
 void handleJs() {
@@ -310,12 +330,11 @@ void handleGsm() {
 
 void handleIot() {
   if (!checkPinGuard()) return;
-  String html = htmlHead("Internet / IoT", "3");
+  String html = htmlHead("IoT", "3");
 
   html += "<div class='card'><h2>Adatkapcsolat</h2>";
   html += stateRow("Állapot", gData.active ? "Aktív" : "Inaktív", gData.active ? "g" : "r");
   if (gData.active) html += stateRow("IP cím", gData.ip);
-  if (gData.lastError.length()) html += "<div class='msg err'>" + htmlEscape(gData.lastError) + "</div>";
   
   html += "<div style='display:flex;gap:8px;margin-top:10px'>";
   if (gData.active) {
@@ -334,7 +353,6 @@ void handleIot() {
   if (gData.pingResult.length()) html += "<div class='msg " + String(gData.pingOk ? "ok" : "err") + "' style='margin-top:10px'>" + htmlEscape(gData.pingResult) + "</div>";
   html += "</div>";
 
-  // FRISSÍTVE: ntfy üzenetküldés eszközazonosítóval és prioritással
   html += "<div class='card wide'><h2>ntfy Értesítések</h2>";
   html += "<form action='/ntfy-send' method='POST'>";
   html += "<label>Üzenet küldése az aktuális csatornára</label>";
@@ -353,13 +371,34 @@ void handleIot() {
   html += "<form action='/ntfy-poll' method='POST'>";
   html += "<button class='sec'>Üzenetek lekérdezése (Poll)</button>";
   html += "</form>";
-  if (gData.lastError.length() && gData.lastError.startsWith("NTFY")) {
-      html += "<div class='msg ok' style='margin-top:10px'>" + htmlEscape(gData.lastError) + "</div>";
+  
+  if (gData.lastError.length()) {
+      if (gData.lastError.startsWith("NTFY_HTML:")) {
+          html += "<div class='msg ok' style='margin-top:15px; text-align:left; line-height:1.4;'>" + gData.lastError.substring(10) + "</div>";
+      } else if (gData.lastError.startsWith("NTFY")) {
+          html += "<div class='msg ok' style='margin-top:10px'>" + htmlEscape(gData.lastError) + "</div>";
+      } else {
+          html += "<div class='msg err' style='margin-top:10px'>" + htmlEscape(gData.lastError) + "</div>";
+      }
   }
   html += "</div>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
+}
+
+void handleEspRestart() {
+  String html = htmlHead("Rendszer Újraindítás", "5");
+  html += "<div class='card' style='text-align:center; padding:30px;'>";
+  html += "<h2>Az ESP32 újraindul...</h2>";
+  html += "<p class='hint'>A kapcsolat megszakad, kérlek várj pár másodpercet, majd frissítsd az oldalt.</p>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+  
+  diagAdd("ESP32 kézi újraindítás webes felületről.");
+  delay(1000); // Hagy időt, hogy a válasz elmenjen a böngészőbe
+  ESP.restart();
 }
 
 void handleNtfySend() {
@@ -369,7 +408,6 @@ void handleNtfySend() {
   String msg = server.arg("msg");
   msg.trim();
   
-  // FRISSÍTVE: Prioritás és Nickname használata
   int prioVal = server.hasArg("priority") ? server.arg("priority").toInt() : 3;
   NtfyPriority priority = static_cast<NtfyPriority>(prioVal);
 
@@ -392,8 +430,46 @@ void handleNtfyPoll() {
   NtfyPollResult res = ntfy.pollMessages("10m", ""); 
   
   if(res.success) {
-    gData.lastError = "NTFY Válasz: " + res.rawPayload;
-    diagAdd("ntfy poll sikeres. Adat: " + res.rawPayload);
+    String raw = res.rawPayload;
+    raw.trim();
+    
+    if (raw.length() == 0) {
+        gData.lastError = "NTFY_HTML:<b style='font-size:14px;'>Beérkezett üzenetek:</b><br><br>Nincs új üzenet az elmúlt 10 percben.";
+    } else {
+        raw.replace("}{", "},{");
+        raw.replace("}\r\n{", "},{");
+        raw.replace("}\n{", "},{");
+        raw.replace("}\r{", "},{");
+        String jsonArray = "[" + raw + "]";
+        
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, jsonArray);
+        
+        if (!err) {
+            String formatted = "<b style='font-size:14px;'>Beérkezett üzenetek:</b><br><br>";
+            JsonArray arr = doc.as<JsonArray>();
+            
+            if (arr.size() == 0) {
+                formatted += "Nincs új üzenet az elmúlt 10 percben.";
+            } else {
+                for (JsonObject obj : arr) {
+                    String title = obj["title"].as<String>();
+                    if (title == "null" || title.length() == 0) title = "Értesítés";
+                    String msg = obj["message"].as<String>();
+                    if (msg == "null") msg = "";
+                    int prio = obj["priority"] | 3;
+                    
+                    formatted += "<div style='margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border);'>";
+                    formatted += "<b style='color:var(--ok);'>" + htmlEscape(title) + "</b> <span style='font-size:10px; color:var(--txt2);'>(Prio: " + String(prio) + ")</span><br>";
+                    formatted += "<span style='color:var(--txt);'>" + htmlEscape(msg) + "</span></div>";
+                }
+            }
+            gData.lastError = "NTFY_HTML:" + formatted;
+        } else {
+            gData.lastError = "NTFY Válasz (nyers): " + res.rawPayload;
+        }
+    }
+    diagAdd("ntfy poll sikeres.");
   } else {
     gData.lastError = "NTFY Poll hiba! Kód: " + String(res.httpCode);
     diagAdd("ntfy poll sikertelen.");
@@ -404,16 +480,18 @@ void handleNtfyPoll() {
 }
 
 void handleSaveNtfy() {
-  // FRISSÍTVE: Nickname mező kezelése
   if (server.hasArg("ntfy_topic")) {
     String srv = server.hasArg("ntfy_server") ? server.arg("ntfy_server") : "ntfy.sh";
     String top = server.arg("ntfy_topic");
     String nick = server.hasArg("ntfy_nickname") ? server.arg("ntfy_nickname") : "";
+    bool startup = server.hasArg("ntfy_startup");
+    
     srv.trim();
     top.trim();
     nick.trim();
-    saveNtfyConfig(srv, top, nick);
-    diagAdd("ntfy konfig mentve: " + srv + "/" + top + " (Név: " + nick + ")");
+    
+    saveNtfyConfig(srv, top, nick, startup);
+    diagAdd("ntfy konfig mentve: " + srv + "/" + top + " (Indulási msg: " + String(startup ? "BE" : "KI") + ")");
   }
   server.sendHeader("Location", "/cfg");
   server.send(302);
@@ -976,8 +1054,16 @@ void handleExpert() {
           "<button type='submit' style='flex:2'>OK (Elküldés és mentés)</button>"
           "<button type='button' class='sec' onclick='location.href=\"/expertreset\"' style='flex:1'>Visszaállít (Alapértelmezett)</button>"
           "</div>"
-          "</form></div>";
-
+          "</form>"
+          "<hr style='border:0; border-top:1px solid var(--border); margin:20px 0;'>"
+          "<h2>Teljes gyári reset</h2>"
+          "<p class='hint'>Minden modem expert beállítás visszaállítása gyári alapértelmezettre (AT&F).</p>"
+          "<form action='/expertfullreset' method='POST'>"
+          "<button class='danger' style='margin-top:8px'>Teljes Reset (AT&F)</button>"
+          "</form>"
+          "</div>";
+  html += "<form action='/esprestart' method='POST' style='margin-top:10px'>"
+          "<button class='danger'>ESP32 Teljes Újraindítás</button></form>";
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
@@ -1144,7 +1230,7 @@ function doScan(){
   }
   html += "</select><button>Mentes & ujraindulas</button></form></div>";
 
-  // FRISSÍTVE: ntfy_nickname bekérése is a felületen
+  // --- ITT FRISSÜLT AZ NTFY KÁRTYA CSÚSZKÁS KAPCSOLÓRA ---
   html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
           "<form action='/save-ntfy' method='POST'>"
           "<label>ntfy Szerver</label>"
@@ -1153,7 +1239,15 @@ function doScan(){
           "<input type='text' name='ntfy_topic' value='" + gNtfyTopic + "' required>"
           "<label>Eszközazonosító (Név, pl. szerver-1)</label>"
           "<input type='text' name='ntfy_nickname' value='" + gNtfyNickname + "'>"
-          "<button style='margin-top:10px'>ntfy Mentés</button>"
+          
+          "<div style='display:flex; align-items:center; justify-content:space-between; margin-top:15px; padding-top:10px; border-top:1px solid var(--border);'>"
+          "<span>Rendszerindulási tesztüzenet</span>"
+          "<label class='sens-toggle' style='--sens-color:var(--ok); margin:0;'>"
+          "<input type='checkbox' name='ntfy_startup'" + String(gNtfyStartupMsg ? " checked" : "") + ">"
+          "<span class='slider'></span></label>"
+          "</div>"
+          
+          "<button style='margin-top:20px'>ntfy Mentés</button>"
           "</form></div>";
 
   if (server.hasArg("pin_ok") && gLastValidPin.length() > 0) {
@@ -1242,11 +1336,9 @@ void handleTestSavePin() {
   if(!server.hasArg("pin")){ server.sendHeader("Location","/cfg"); server.send(302); return; }
   String pin = server.arg("pin"); pin.trim();
   
-  // Teszteljük a modemen keresztül
   modem.simUnlock(pin.c_str());
   delay(1200);
 
-  // JAVÍTVA: A 3-as a PUK/Anti-Theft zárolás. A sikeres feloldás (SIM_READY) értéke 1.
   int simStat = modem.getSimStatus();
   if (simStat == 1 /* SIM_READY */) {
     gLastValidPin = pin;
@@ -1262,7 +1354,7 @@ void handleTestSavePin() {
 
 void handleConfirmSavePin() {
   if(server.hasArg("confirmed_pin") && server.arg("confirmed_pin") == gLastValidPin && gLastValidPin.length() > 0) {
-    savePin(gLastValidPin); // Titkosítva menti a crypto.cpp szerint
+    savePin(gLastValidPin); 
     diagAdd("PIN sikeresen elmentve XTEA titkosítással.");
     gLastValidPin = "";
     gModemInitRequested = true;
@@ -1638,6 +1730,20 @@ void handleNetManual() {
   server.send(200, "text/html", html);
 }
 
+void handleExpertFullReset() {
+  if (sendModemBusyPage("Teljes Reset", "8", "/expert")) return;
+  
+  // AT&F parancs a gyári alapértelmezések betöltéséhez, majd mentés
+  if (gModem.ready) {
+    modemAtQuery("AT&F", 3000);
+    modemAtQuery("AT&W", 3000);
+  }
+  
+  diagAdd("Modem teljes gyári reset (AT&F) végrehajtva.");
+  server.sendHeader("Location", "/expert");
+  server.send(302);
+}
+
 void webBegin() {
   server.on("/",           HTTP_GET,  handleRoot);
   server.on("/app.js",        HTTP_GET,  handleJs);
@@ -1668,7 +1774,8 @@ void webBegin() {
   server.on("/expert",        HTTP_GET,  handleExpert);
   server.on("/expertpost",    HTTP_POST, handleExpertPost);
   server.on("/expertreset",   HTTP_POST, handleExpertReset);
-  
+  server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
+
   server.on("/cfg",           HTTP_GET,  handleCfg);
   server.on("/savewifi",      HTTP_POST, handleSaveWifi);
   server.on("/wifiscan",      HTTP_POST, handleWifiScan);
@@ -1698,6 +1805,8 @@ void webBegin() {
   server.on("/netauto",       HTTP_POST, handleNetAuto);
   server.on("/netscan",       HTTP_POST, handleNetScan);
   server.on("/netmanual",     HTTP_POST, handleNetManual);
+
+  server.on("/esprestart", HTTP_POST, handleEspRestart);
 
   server.onNotFound(handleNotFound);
 

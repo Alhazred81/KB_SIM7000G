@@ -72,6 +72,7 @@
 #define ADDR_GNSS_ASSIST_LAT  227 //  4 byte float
 #define ADDR_GNSS_ASSIST_LON  231 //  4 byte float
 #define ADDR_SMS_INBOX_LIMIT  235 //  1 byte
+#define ADDR_NTFY_STARTUP 236 // 1 byte (0xA5 = allowed, anything else = not allowed)
 
 // ─── Szenzor beallitasok EEPROM cimei (256-tol) ─────────────
 // 256      – flag (0xA5 = mentve)
