@@ -1,13 +1,39 @@
 //web_common.cpp
 
 #include <Arduino.h>
+#include <WebServer.h>
 #include "web_common.h"
+
 
 #define DIAG_MAX 20
 
 static String diagLog[DIAG_MAX];
 static int diagHead = 0;
 static int diagCount = 0;
+
+extern WebServer server;
+extern String loadPin(); // Vagy ahonnan a loadPin jön
+
+bool checkPinGuard() {
+  if (loadPin().length() == 0) {
+    server.sendHeader("Location", "/cfg");
+    server.send(302);
+    return false;
+  }
+  return true;
+}
+
+String stateRow(const String& key, const String& val, const String& cls) {
+  String s = "<div class='row'><span class='k'>";
+  s += key;
+  s += "</span><span class='v ";
+  s += cls;
+  s += "'>";
+  s += val;
+  s += "</span></div>";
+  return s;
+}
+
 
 void diagAdd(const String& line) {
   Serial.println("[DIAG] " + line);
@@ -233,14 +259,3 @@ String compassAbbrev(float deg) {
   if(idx < 0) idx += 8;
   return String(dirs[idx]);
 }
-
-String sensStatusJsonEntry(const String& key, bool enabled, bool hasEverRead, bool ok, const String& value) {
-  String j = "\"" + key + "\":{";
-  j += "\"enabled\":" + String(enabled ? "true" : "false") + ",";
-  j += "\"hasEverRead\":" + String(hasEverRead ? "true" : "false") + ",";
-  j += "\"ok\":" + String(ok ? "true" : "false") + ",";
-  j += "\"value\":\"" + jsEscape(value) + "\"";
-  j += "}";
-  return j;
-}
-

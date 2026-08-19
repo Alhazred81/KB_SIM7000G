@@ -1,12 +1,12 @@
 //web_ui.cpp
 
-#include "web_ui.h"
 #include <Arduino.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
+#include "calendar.h"
 #include "config.h"
 #include "gnss_mgr.h"
 #include "modem_mgr.h"
@@ -14,9 +14,13 @@
 #include "sensors.h"
 #include "time_mgr.h"
 #include "wifi_sta.h"
-#include "web_common.h"
-#include "web_theme.h"
 #include "web_backup.h"
+#include "web_common.h"
+#include "web_gsm.h"
+#include "web_sensors.h"
+#include "web_theme.h"
+#include "web_ui.h"
+
 
 extern WebServer server;
 extern DNSServer dnsServer;
@@ -52,6 +56,7 @@ extern String gSmsPendingText;
 extern bool gSmsSendInProgress;
 extern bool gSmsSendDone;
 extern String gSmsSendResult;
+extern bool checkPinGuard();
 
 extern ScannedNet gScanResults[];
 extern int gScanCount;
@@ -65,75 +70,8 @@ static int gLastSentMinute = -1;
 
 String gReportTimes = "21:00";
 
-// PIN ellenőrző segédfüggvény a védett oldalakhoz
-bool checkPinGuard() {
-  if (loadPin().length() == 0) {
-    server.sendHeader("Location", "/cfg");
-    server.send(302);
-    return false;
-  }
-  return true;
-}
-
-String stateRow(const String& key, const String& val, const String& cls = "") {
-  String s = "<div class='row'><span class='k'>";
-  s += key;
-  s += "</span><span class='v ";
-  s += cls;
-  s += "'>";
-  s += val;
-  s += "</span></div>";
-  return s;
-}
-
-String sensorRowHtml(const String& sensorKey, const String& label, bool enabled,
-                     bool hasEverRead, bool isOk, const String& valueText,
-                     const String& pinInfo = "") {
-  String color = "gray";
-  if(enabled) color = (!hasEverRead) ? "y" : (isOk ? "g" : "r");
-  String cssColor = (color=="g") ? "var(--ok)" : (color=="y") ? "var(--warn)" : (color=="r") ? "var(--err)" : "#555";
-
-  String h = "<div class='sens-row' id='sensRow_" + sensorKey + "'>";
-  h += "<label class='sens-toggle' style='--sens-color:" + cssColor + "'>"
-       "<input type='checkbox' id='sensChk_" + sensorKey + "'"
-       + String(enabled ? " checked" : "") +
-       " onchange='sensToggle(\"" + sensorKey + "\", this.checked)'>"
-       "<span class='slider'></span></label>";
-  h += "<span class='sens-name'>" + label;
-  if(pinInfo.length()) {
-    h += "<span class='pin-info' onclick='this.classList.toggle(\"open\")'>ⓘ"
-         "<span class='pin-bubble'>" + pinInfo + "</span></span>";
-  }
-  h += "</span>";
-  h += "<span class='sens-value" + String(valueText.length() ? "" : " dim") + "' id='sensVal_" + sensorKey + "'>";
-  h += valueText.length() ? valueText : (enabled ? "meres folyamatban..." : "kikapcsolva");
-  h += "</span></div>";
-  return h;
-}
-
 String satRow(const String& systemName, int count) {
   return stateRow(systemName, satText(count));
-}
-
-String modemBusyReason() {
-  if(gModemInitRequested || gModem.initInProgress) return "Modem inicializalas folyamatban, varj amig befejezodik.";
-  if(gSmsSendRequested || gSmsSendInProgress) return "SMS kuldes folyamatban, kozben a modem soros portja foglalt.";
-  if(gData.inProgress) return "Adatkapcsolat valtas folyamatban, varj par masodpercet.";
-  if(gData.pingInProgress) return "Ping teszt folyamatban, varj par masodpercet.";
-  if(gModem.callActive) return "Hivas folyamatban, kozben a modem soros portjat nem piszkaljuk.";
-  return "";
-}
-
-bool sendModemBusyPage(const String& title, const String& active, const String& backUrl) {
-  String reason = modemBusyReason();
-  if(reason.length() == 0) return false;
-  String html = htmlHead(title, active);
-  html += "<h1>Modem foglalt</h1>";
-  html += "<div class='msg warn'>" + htmlEscape(reason) + "</div>";
-  html += "<a href='" + backUrl + "'><button class='sec'>Vissza</button></a>";
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-  return true;
 }
 
 void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds) {
@@ -240,6 +178,8 @@ void handleRoot() {
   html += stateRow("Uptime", String(millis() / 60000) + " perc");
   html += "</div>";
 
+ html += getCalendarCardHtml();
+
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
@@ -287,51 +227,6 @@ void handleNotFound() {
   if(server.uri() == "/s.css") { handleCss(); return; }
   server.sendHeader("Location","http://192.168.4.1/",true);
   server.send(302,"text/plain","");
-}
-
-void handleGsm() {
-  if (!checkPinGuard()) return;
-  String html = htmlHead("GSM", "2");
-
-  html += "<div class='card wide'><h2>SMS Küldés</h2>";
-  html += "<form action='/dosms' method='POST'>";
-  html += phoneInputBlock("smsBtn", "num");
-  html += "<label>Üzenet</label><textarea name='smstext' maxlength='160'></textarea>";
-  html += "<button id='smsBtn' disabled>SMS Küldés</button></form></div>";
-
-  html += "<div class='card'><h2>Hívásteszt</h2>";
-  html += "<form action='/docall' method='POST'>";
-  html += phoneInputBlock("callBtn", "cnum");
-  html += "<button id='callBtn' disabled>Hívás indítása</button></form></div>";
-
-  html += "<div class='card'><h2>SMS Központ (SMSC)</h2>";
-  html += "<form action='/setsmsc' method='POST'>";
-  html += "<label>Központ száma (pl. +36309888000)</label>";
-  html += "<input type='text' name='smsc' value='" + gModem.smscNumber + "'>";
-  html += "<button class='sec'>Mentés</button></form></div>";
-
-  html += "<div class='card wide'><h2>Hálózatválasztás (Automata / Kézi)</h2>";
-  html += "<p class='hint'>Alapértelmezésben automata, de fix telepítésnél rögzítheted a saját szolgáltatód, hogy ne keresgéljen feleslegesen.</p>";
-  
-  html += stateRow("Jelenlegi operátor", gModem.operatorName.length() ? gModem.operatorName : "Ismeretlen");
-  html += stateRow("Hálózati típus", gModem.netType.length() ? gModem.netType : "Ismeretlen");
-
-  html += "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap'>";
-  html += "<form action='/netauto' method='POST' style='flex:1;min-width:140px'><button class='sec'>🔄 Váltás Automatikusra</button></form>";
-  html += "<form action='/netscan' method='POST' style='flex:1;min-width:140px'><button class='sec'>📡 Hálózatok keresése</button></form>";
-  html += "</div>";
-
-  html += "<form action='/netmanual' method='POST' style='margin-top:14px;border-top:1px solid var(--border);padding-top:12px'>";
-  html += "<label>Kézi hálózat rögzítése (MCC/MNC kód, pl. Telekom: 21630)</label>";
-  html += "<div style='display:flex;gap:8px'>";
-  html += "<input type='text' name='netcode' placeholder='pl. 21630' style='flex:1;margin:0'>";
-  html += "<button style='width:auto;padding:0 16px'>Rögzítés</button>";
-  html += "</div></form>";
-
-  html += "</div>";
-
-  html += htmlFoot();
-  server.send(200, "text/html", html);
 }
 
 void handleIot() {
@@ -533,161 +428,6 @@ void handleSaveNtfy() {
   server.send(302);
 }
 
-void handleSetSmsc() {
-  if(sendModemBusyPage("SMSC beallitas", "2", "/gsm")) return;
-  if(!server.hasArg("smsc")){
-    server.sendHeader("Location","/gsm"); server.send(302); return;
-  }
-  String smsc = server.arg("smsc");
-  smsc.trim();
-
-  String html = htmlHead("SMSC beallitas", "2");
-
-  if(smsc.length() == 0) {
-    html += "<div class='msg err'>Az SMSC szam nem lehet ures.</div>";
-  } else {
-    String err = setSmsc(smsc);
-    if(err.length() == 0) {
-      diagAdd("SMSC beallitva: " + smsc);
-      html += "<div class='msg ok'>SMSC szam beallitva: " + htmlEscape(smsc) + "</div>";
-    } else {
-      diagAdd("SMSC beallitas HIBA: " + err);
-      html += "<div class='msg err'>" + err + "</div>";
-    }
-  }
-  html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-}
-
-void handleDoSms() {
-  if(sendModemBusyPage("SMS", "2", "/gsm")) return;
-  if(!server.hasArg("num") || !server.hasArg("smstext")){
-    server.sendHeader("Location","/gsm"); server.send(302); return;
-  }
-
-  unsigned long left = 0;
-  if(gLastSms > 0 && millis()-gLastSms < SMS_COOLDOWN_MS)
-    left = (SMS_COOLDOWN_MS-(millis()-gLastSms))/1000;
-  if(left > 0){
-    server.sendHeader("Location","/gsm"); server.send(302); return;
-  }
-
-  String num    = server.arg("num");    num.trim();
-  String smstext = server.arg("smstext");  smstext.trim();
-
-  String clean = "";
-  for(int i=0; i<(int)smstext.length() && i<SMS_MAX_LEN; i++){
-    char c = smstext[i];
-    if((uint8_t)c >= 0x80) continue;
-    clean += c;
-  }
-
-  String html = htmlHead("SMS", "2");
-
-  if(!num.startsWith("+36")||num.length()!=12){
-    html += "<div class='msg err'>Ervenytelen telefonszam! A formatum: +36xxxxxxxxx (9 szam a +36 utan).</div>";
-    html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
-    html += htmlFoot();
-    server.send(200, "text/html", html);
-    return;
-  }
-  if(clean.length()==0){
-    html += "<div class='msg err'>Az uzenet ures maradt a ekezet-szures utan (csak ekezetes karaktereket irtal be?).</div>";
-    html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
-    html += htmlFoot();
-    server.send(200, "text/html", html);
-    return;
-  }
-
-  gSmsPendingNum  = num;
-  gSmsPendingText = clean;
-  gSmsSendDone    = false;
-  gSmsSendResult  = "";
-  gSmsSendRequested = true;
-
-  html += "<div class='card full'>"
-    "<div style='text-align:center;padding:8px'>"
-    "<div id='smsPhase' style='font-size:13px;color:var(--txt2)'>SMS kuldese folyamatban...</div>"
-    "<div id='smsSpin' style='font-size:28px;margin:10px 0'>⏳</div>"
-    "<div id='smsResult' style='display:none'></div>"
-    "<a href='/gsm'><button id='smsWaitBtn' class='sec' disabled style='margin-top:12px'>Varakozas...</button></a>"
-    "</div></div>"
-    "<script>"
-    "function smsPoll(){"
-      "fetch('/smsstatus').then(function(r){return r.json();}).then(function(d){"
-        "if(!d.done){"
-          "setTimeout(smsPoll, 1000);"
-          "return;"
-        "}"
-        "document.getElementById('smsSpin').style.display='none';"
-        "document.getElementById('smsPhase').innerText = d.ok ? 'Kesz!' : 'Sikertelen.';"
-        "var res = document.getElementById('smsResult');"
-        "res.style.display='block';"
-        "var btn = document.getElementById('smsWaitBtn');"
-        "btn.disabled = false;"
-        "btn.innerText = 'Vissza az SMS oldalra';"
-        "btn.style.background = d.ok ? 'var(--ok)' : '';"
-        "if(d.ok){"
-          "res.innerHTML = \"<div class='msg ok'>✓ SMS elkuldve!</div>\";"
-        "} else {"
-          "res.innerHTML = \"<div class='msg err'>SMS kuldes sikertelen: \" + d.error + \"</div>\";"
-        "}"
-      "}).catch(function(){ setTimeout(smsPoll, 1500); });"
-    "}"
-    "setTimeout(smsPoll, 500);"
-    "</script>";
-
-  server.send(200, "text/html", html + htmlFoot());
-}
-
-void handleSmsStatus() {
-  String json = "{";
-  json += "\"done\":" + String(gSmsSendDone ? "true" : "false") + ",";
-  json += "\"ok\":" + String(gSmsSendDone && gSmsSendResult.length()==0 ? "true" : "false") + ",";
-  json += "\"error\":\"" + jsEscape(gSmsSendResult) + "\"";
-  json += "}";
-  server.send(200, "application/json", json);
-}
-
-void handleDoCall() {
-  if(sendModemBusyPage("Hivas", "2", "/gsm")) return;
-  if(!server.hasArg("num")){server.sendHeader("Location","/gsm");server.send(302);return;}
-  String num = server.arg("num"); num.trim();
-  String html = htmlHead("Hivas", "2");
-
-  if(!num.startsWith("+36")||num.length()!=12){
-    html += "<div class='msg err'>Ervenytelen szam! A formatum: +36xxxxxxxxx (9 szam a +36 utan).</div>";
-  } else {
-    String err = startCall(num);
-    if(err.length()==0){
-      diagAdd("Hivas inditva -> "+num);
-      html += "<div class='msg ok'>📞 Hivas inditva: ";
-      html += num;
-      html += "</div>"
-              "<div class='hint'>A hivas automatikusan bontodik: 3. csengetes, fogadas, visszautasitas vagy foglalt jel eseten.</div>"
-              "<form action='/hangup' method='POST'>"
-              "<button class='danger' style='margin-top:14px'>🚫 Azonnali bontas</button></form>";
-    } else {
-      diagAdd("Hivas HIBA -> "+num+": "+err);
-      html += "<div class='msg err'>Hivas inditas sikertelen: ";
-      html += err;
-      html += "</div>";
-    }
-  }
-  html += "<a href='/gsm'><button class='sec'>Vissza</button></a>";
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-}
-
-void handleHangup() {
-  if(!gModem.callActive && sendModemBusyPage("Bontas", "2", "/gsm")) return;
-  hangUp();
-  diagAdd("Hivas bontva (manualis)");
-  server.sendHeader("Location","/gsm");
-  server.send(302);
-}
-
 void handleDataOn() {
   if(sendModemBusyPage("Adatkapcsolat", "3", "/iot")) return;
   String err = dataConnEnable();
@@ -710,139 +450,6 @@ void handleDataPing() {
   dataConnPing(target);
   server.sendHeader("Location","/iot");
   server.send(302);
-}
-
-void handleSensors() {
-  if (!checkPinGuard()) return;
-  String html = htmlHead("Szenzorok", "7");
-
-  html += "<div class='card wide'><h2>Allapot</h2>";
-  html += sensorRowHtml("windspeed", "Szelsebesseg", gWindSpeed.enabled,
-            gWindSpeed.lastGoodRead>0, gWindSpeed.lastReadOk, windSpeedValueText());
-  html += sensorRowHtml("winddir", "Szelirany", gWindDir.enabled,
-            gWindDir.lastGoodRead>0, gWindDir.lastReadOk, windDirValueText());
-  html += sensorRowHtml("sht", "SHT57 ho/para", gSht.enabled,
-            gSht.lastGoodRead>0, gSht.lastReadOk, shtValueText());
-  html += sensorRowHtml("rain", "Esoszenzor", gRain.enabled,
-            gRain.lastPoll>0, true, rainValueText());
-  html += sensorRowHtml("mpu", "MPU6050 (I2C1)", gMpu.enabled,
-            gMpu.lastGoodRead>0, gMpu.lastReadOk, mpuValueText());
-  html += sensorRowHtml("ahtbmp", "AHT20+BMP280 (I2C2)", gAhtBmp.enabled,
-            gAhtBmp.lastGoodRead>0, gAhtBmp.lastReadOk, ahtBmpValueText());
-  html += sensorRowHtml("ltr", "LTR-390 UV (I2C2)", gLtr.enabled,
-            gLtr.lastGoodRead>0, gLtr.lastReadOk, ltrValueText());
-  html += "</div>";
-
-  html += "<div class='card wide'><h2>RS485 / Modbus beallitasok</h2>"
-          "<form action='/sensconfig' method='POST'>"
-          "<label>RS485 baudrate</label>"
-          "<select name='baud'>";
-  const long bauds[] = {1200,2400,4800,9600,19200,38400,57600,115200};
-  for(int i=0;i<8;i++){
-    html += "<option value='" + String(bauds[i]) + "'";
-    if((long)gSensRs485Baud == bauds[i]) html += " selected";
-    html += ">" + String(bauds[i]) + "</option>";
-  }
-  html += "</select>"
-          "<label>Szelsebesseg Modbus cim</label>"
-          "<input type='number' name='addr_windspeed' min='1' max='247' value='" + String(gWindSpeed.modbusAddr) + "'>"
-          "<label>Szelirany Modbus cim</label>"
-          "<input type='number' name='addr_winddir' min='1' max='247' value='" + String(gWindDir.modbusAddr) + "'>"
-          "<label>SHT57 Modbus cim</label>"
-          "<input type='number' name='addr_sht' min='1' max='247' value='" + String(gSht.modbusAddr) + "'>"
-          "<div class='cb-row'><input type='checkbox' name='rain_modbus' id='rmCb'"
-          + String(gRain.isModbus ? " checked" : "") + "><label for='rmCb'>Esoszenzor RS485/Modbus modban (kulonben analog bemenet)</label></div>"
-          "<label>Esoszenzor Modbus cim (csak ha fent bepipalva)</label>"
-          "<input type='number' name='addr_rain' min='1' max='247' value='" + String(gRain.modbusAddr) + "'>"
-          "<button class='sec'>Mentes</button>"
-          "</form></div>";
-
-  html += "<div class='card wide'><h2>Tesztelés</h2>"
-          "<p class='hint'>Azonnali, egyszeri lekerdezes a kivalasztott eszkozre.</p>"
-          "<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px'>"
-          "<form action='/senstest' method='POST' style='flex:1;min-width:120px'>"
-          "<input type='hidden' name='which' value='windspeed'>"
-          "<button class='sec'>Szelsebesseg teszt</button></form>"
-          "<form action='/senstest' method='POST' style='flex:1;min-width:120px'>"
-          "<input type='hidden' name='which' value='winddir'>"
-          "<button class='sec'>Szelirany teszt</button></form>"
-          "<form action='/senstest' method='POST' style='flex:1;min-width:120px'>"
-          "<input type='hidden' name='which' value='sht'>"
-          "<button class='sec'>SHT57 teszt</button></form>"
-          "<form action='/senstest' method='POST' style='flex:1;min-width:120px'>"
-          "<input type='hidden' name='which' value='rain'>"
-          "<button class='sec'>Eso teszt</button></form>"
-          "</div>";
-  if(gLastSensTestResult.length()) {
-    html += "<div class='msg " + String(gLastSensTestOk ? "ok" : "err") + "' style='margin-top:10px'>"
-            + htmlEscape(gLastSensTestResult) + "</div>";
-    if(gLastSensTestRaw.length()) {
-      html += "<div class='diag' style='margin-top:6px'>Nyers Modbus valasz: " + htmlEscape(gLastSensTestRaw) + "</div>";
-    }
-  }
-  html += "</div>";
-
-  html += R"js(<script>
-function sensToggle(key, on){
-  fetch('/senstoggle', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'key='+encodeURIComponent(key)+'&on='+(on?'1':'0')});
-}
-function sensPoll(){
-  fetch('/sensstatus').then(function(r){return r.json();}).then(function(d){
-    for(var key in d){
-      var row = document.getElementById('sensRow_'+key);
-      if(!row) continue;
-      var val = document.getElementById('sensVal_'+key);
-      var chk = document.getElementById('sensChk_'+key);
-      var s = d[key];
-      if(val){
-        val.innerText = s.value || (s.enabled ? 'meres folyamatban...' : 'kikapcsolva');
-        val.className = 'sens-value' + (s.value ? '' : ' dim');
-      }
-      if(chk) chk.checked = s.enabled;
-      var toggle = row.querySelector('.sens-toggle');
-      if(toggle){
-        var color = '#555';
-        if(s.enabled) color = !s.hasEverRead ? 'var(--warn)' : (s.ok ? 'var(--ok)' : 'var(--err)');
-        toggle.style.setProperty('--sens-color', color);
-      }
-    }
-  }).catch(function(){});
-}
-setInterval(sensPoll, 3000);
-</script>)js";
-
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-}
-
-void handleSensToggle() {
-  if(!server.hasArg("key") || !server.hasArg("on")) {
-    server.send(400, "text/plain", "hianyzo parameter");
-    return;
-  }
-  String key = server.arg("key");
-  bool on = server.arg("on") == "1";
-
-  int bit = -1;
-  if(key == "windspeed") bit = SENS_BIT_WINDSPEED;
-  else if(key == "winddir") bit = SENS_BIT_WINDDIR;
-  else if(key == "sht") bit = SENS_BIT_SHT;
-  else if(key == "rain") bit = SENS_BIT_RAIN;
-  else if(key == "mpu") bit = SENS_BIT_MPU6050;
-  else if(key == "ahtbmp") bit = SENS_BIT_AHT20BMP280;
-  else if(key == "ltr") bit = SENS_BIT_LTR390;
-
-  if(bit < 0) {
-    server.send(400, "text/plain", "ismeretlen szenzor");
-    return;
-  }
-
-  sensSetEnabled((uint8_t)bit, on);
-  sensorsApplyEnabled();
-  saveSensorConfig();
-  diagAdd("Szenzor '" + key + "': " + (on ? "bekapcsolva" : "kikapcsolva"));
-  server.send(200, "text/plain", "ok");
 }
 
 void saveReportConfig(const String& times) {
@@ -1864,118 +1471,6 @@ void handleReinit() {
   sendWaitPage("Modem Újraindítás", "A modem hardveres és szoftveres újraindítása folyamatban van. A hálózati regisztráció befejezéséig kérlek, várj.", "/", 35);
 }
 
-void handleNetAuto() {
-  if(sendModemBusyPage("Hálózatváltás", "2", "/gsm")) return;
-  String err = setAutoNetwork();
-  if(err.length() == 0) {
-    diagAdd("Hálózat visszaállítva automatikus módra.");
-  } else {
-    diagAdd("Hiba automatikus hálózatváltáskor: " + err);
-  }
-  server.sendHeader("Location", "/gsm");
-  server.send(302);
-}
-
-void handleNetScan() {
-  if(sendModemBusyPage("Hálózatkeresés", "2", "/gsm")) return;
-  diagAdd("Hálózatok keresése indítva (AT+COPS=)...");
-  String rawRes = scanAvailableNetworks();
-  diagAdd("Hálózat keresés eredménye: " + rawRes);
-  
-  String html = htmlHead("Hálózatválasztás", "2");
-  html += "<h1>Elérhető mobilhálózatok</h1>";
-  html += "<div class='card wide'>";
-  html += "<p class='hint'>Válaszd ki az alábbi listából a kívánt hálózatot a rögzítéshez:</p>";
-
-  html += "<form action='/netmanual' method='POST'>";
-  html += "<label>Talált hálózatok</label>";
-  html += "<select name='netcode' style='margin-bottom:12px'>";
-
-  int pos = 0;
-  bool foundAny = false;
-
-  while(true) {
-    int start = rawRes.indexOf('(', pos);
-    if(start < 0) break;
-    int end = rawRes.indexOf(')', start);
-    if(end < 0) break;
-    
-    String entry = rawRes.substring(start + 1, end);
-    pos = end + 1;
-
-    String parts[10];
-    int partCount = 0;
-    int pIdx = 0;
-    while(partCount < 10) {
-      int q1 = entry.indexOf('"', pIdx);
-      if(q1 < 0) break;
-      int q2 = entry.indexOf('"', q1 + 1);
-      if(q2 < 0) break;
-      parts[partCount++] = entry.substring(q1 + 1, q2);
-      pIdx = q2 + 1;
-    }
-
-    if(partCount >= 2) {
-      String netName = parts[0];
-      String netCode = "";
-      
-      for(int i = 0; i < partCount; i++) {
-        if(parts[i].length() == 5 && isDigit(parts[i][0])) {
-          netCode = parts[i];
-          break;
-        }
-      }
-
-      if(netCode.length() > 0) {
-        foundAny = true;
-        html += "<option value='" + netCode + "'>" + htmlEscape(netName) + " (" + netCode + ")</option>";
-      }
-    }
-  }
-
-  if(!foundAny) {
-    html += "<option value=''>Nem található értelmezhető hálózat</option>";
-  }
-
-  html += "</select>";
-  html += "<button style='margin-top:6px' " + String(foundAny ? "" : "disabled") + ">Kiválasztott hálózat rögzítése</button>";
-  html += "</form>";
-
-  html += "<details style='margin-top:20px'><summary class='hint' style='cursor:pointer'>Nyers modem válasz</summary>";
-  html += "<div class='diag' style='margin-top:6px'>" + htmlEscape(rawRes) + "</div></details>";
-
-  html += "<a href='/gsm'><button class='sec' style='margin-top:14px'>Vissza a GSM oldalra</button></a></div>";
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-}
-
-void handleNetManual() {
-  if(sendModemBusyPage("Kézi Hálózat", "2", "/gsm")) return;
-  if(!server.hasArg("netcode")) {
-    server.sendHeader("Location", "/gsm");
-    server.send(302);
-    return;
-  }
-  String code = server.arg("netcode");
-  code.trim();
-  
-  String err = setManualNetwork(code, 7); 
-  String html = htmlHead("Hálózat rögzítés", "2");
-  html += "<h1>Kézi hálózat rögzítése</h1>";
-  
-  if(err.length() == 0) {
-    diagAdd("Sikeresen rögzítve a kézi hálózat: " + code);
-    html += "<div class='msg ok'>A hálózat sikeresen rögzítve: " + htmlEscape(code) + "</div>";
-  } else {
-    diagAdd("Hiba a hálózat rögzítésekor: " + err);
-    html += "<div class='msg err'>" + htmlEscape(err) + "</div>";
-  }
-  
-  html += "<a href='/gsm'><button class='sec'>Vissza a GSM oldalra</button></a>";
-  html += htmlFoot();
-  server.send(200, "text/html", html);
-}
-
 void handleExpertFullReset() {
   if (sendModemBusyPage("Teljes Reset", "8", "/expert")) return;
   
@@ -1987,61 +1482,6 @@ void handleExpertFullReset() {
   
   diagAdd("Modem teljes gyári reset (AT&F) végrehajtva.");
   server.sendHeader("Location", "/expert");
-  server.send(302);
-}
-
-void handleSensStatus() {
-  String json = "{";
-  json += sensStatusJsonEntry("windspeed", gWindSpeed.enabled, gWindSpeed.lastGoodRead>0, gWindSpeed.lastReadOk, windSpeedValueText()) + ",";
-  json += sensStatusJsonEntry("winddir", gWindDir.enabled, gWindDir.lastGoodRead>0, gWindDir.lastReadOk, windDirValueText()) + ",";
-  json += sensStatusJsonEntry("sht", gSht.enabled, gSht.lastGoodRead>0, gSht.lastReadOk, shtValueText()) + ",";
-  json += sensStatusJsonEntry("rain", gRain.enabled, gRain.lastPoll>0, true, rainValueText()) + ",";
-  json += sensStatusJsonEntry("mpu", gMpu.enabled, gMpu.lastGoodRead>0, gMpu.lastReadOk, mpuValueText()) + ",";
-  json += sensStatusJsonEntry("ahtbmp", gAhtBmp.enabled, gAhtBmp.lastGoodRead>0, gAhtBmp.lastReadOk, ahtBmpValueText()) + ",";
-  json += sensStatusJsonEntry("ltr", gLtr.enabled, gLtr.lastGoodRead>0, gLtr.lastReadOk, ltrValueText());
-  json += "}";
-  server.send(200, "application/json", json);
-}
-
-void handleSensConfig() {
-  if(server.hasArg("baud")) {
-    long b = server.arg("baud").toInt();
-    if(b >= 1200 && b <= 921600) {
-      gSensRs485Baud = (uint32_t)b;
-      if(gRs485Initialized) { rs485Init(); }
-    }
-  }
-  if(server.hasArg("addr_windspeed")) {
-    int v = server.arg("addr_windspeed").toInt();
-    if(v >= 1 && v <= 247) gWindSpeed.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_winddir")) {
-    int v = server.arg("addr_winddir").toInt();
-    if(v >= 1 && v <= 247) gWindDir.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_sht")) {
-    int v = server.arg("addr_sht").toInt();
-    if(v >= 1 && v <= 247) gSht.modbusAddr = (uint8_t)v;
-  }
-  if(server.hasArg("addr_rain")) {
-    int v = server.arg("addr_rain").toInt();
-    if(v >= 1 && v <= 247) gRain.modbusAddr = (uint8_t)v;
-  }
-  gRain.isModbus = server.hasArg("rain_modbus");
-
-  saveSensorConfig();
-  diagAdd("Szenzor RS485/Modbus beallitasok mentve.");
-  server.sendHeader("Location","/sensors");
-  server.send(302);
-}
-
-void handleSensTest() {
-  if(!server.hasArg("which")) {
-    server.sendHeader("Location","/sensors"); server.send(302); return;
-  }
-  sensTestRun(server.arg("which"));
-  diagAdd("Szenzor teszt (" + server.arg("which") + "): " + gLastSensTestResult);
-  server.sendHeader("Location","/sensors");
   server.send(302);
 }
 

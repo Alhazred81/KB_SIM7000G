@@ -4,6 +4,8 @@
 
 #include <Arduino.h>
 
+bool checkPinGuard();
+
 void diagAdd(const String& line);
 String diagDump();
 
@@ -32,7 +34,7 @@ String htmlEscape(const String& in);
 String jsEscape(const String& in);
 String satText(int value);
 String ageText(unsigned long stamp);
-
+String stateRow(const String& key, const String& val, const String& cls = "");
 String modemBusyReason();
 
 bool sendModemBusyPage(const String& title,
