@@ -1,8 +1,11 @@
 //time_mgr.cpp
 
+#include <Arduino.h>
+#include <WiFi.h>
 #include "time_mgr.h"
 
 TimeState gTime;
+extern HardwareSerial modemSerial; // <-- Ide beillesztve
 
 String formatLocalTime() {
   struct tm tmInfo;
@@ -51,7 +54,36 @@ void ntpLoop() {
     }
   }
 }
+// time_mgr.cpp-hez tartozó kiegészítés
+
+void syncModemClockWithNtp() {
+  if (!gTime.synced) return;
+  String t = gTime.localTime; 
+  if (t.length() >= 19) {
+    String yy = t.substring(2, 4);
+    String mo = t.substring(5, 7);
+    String dd = t.substring(8, 10);
+    String hh = t.substring(11, 13);
+    String mi = t.substring(14, 16);
+    String ss = t.substring(17, 19);
+    
+    // Mivel CET/CEST zónában vagyunk (+2 óra nyáron, ami 8 negyedóra -> +08)
+    String cclk = "AT+CCLK=\"" + yy + "/" + mo + "/" + dd + "," + hh + ":" + mi + ":" + ss + "+08\"";
+    
+    // Használjuk a közvetlen soros parancsot, ami a modem_mgr-en keresztül mindenhol elérhető:
+    modemSerial.println(cclk);
+    // Beolvassuk a választ, hogy kiürüljön a puffer
+    unsigned long start = millis();
+    while (millis() - start < 1000) {
+      if (modemSerial.available()) {
+        modemSerial.readStringUntil('\n');
+      }
+      yield();
+    }
+  }
+}
 
 bool modemSetTimeFromSystem() {
-return false;
+  syncModemClockWithNtp();
+  return true;
 }

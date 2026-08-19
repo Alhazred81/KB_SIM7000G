@@ -218,3 +218,88 @@ label {
 .card.wide {
   grid-column: 1 / -1;
 }
+
+/* --- Szenzor Skála (Gauge) --- */
+.gauge-container {
+  padding: 30px 15px 40px 15px; /* Hely a lebegő dobozoknak */
+  margin: 15px 0;
+  font-family: sans-serif;
+  position: relative;
+  background: #0a0a18;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.gauge-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--txt);
+  margin-bottom: 35px;
+  text-align: left;
+}
+
+.gauge-track {
+  height: 12px;
+  border-radius: 6px;
+  /* Hőmérséklet jellegű színátmenet: Kék -> Zöld -> Piros */
+  background: linear-gradient(to right, #2196f3 0%, #4caf50 50%, #f44336 100%);
+  position: relative;
+}
+
+.gauge-marker {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%); /* Középre igazítja a dobozt a megadott %-hoz */
+}
+
+/* Felső markerek (Min, Max, Aktuális) */
+.gauge-marker.top {
+  bottom: 100%;
+}
+
+/* Alsó markerek (Átlag/Medián) */
+.gauge-marker.bottom {
+  top: 100%;
+}
+
+.gauge-box {
+  background: #1a1a2e;
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--txt2);
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.gauge-box.current {
+  border-color: var(--ok);
+  color: var(--txt);
+  font-weight: bold;
+  background: #2a2a4a;
+}
+
+/* A vonalak, amik a doboztól a sávig érnek */
+.gauge-line {
+  width: 2px;
+  background: var(--border);
+}
+
+.gauge-marker.top .gauge-line {
+  height: 15px;
+  margin-top: 2px;
+}
+
+.gauge-marker.bottom .gauge-line {
+  height: 15px;
+  margin-bottom: 2px;
+}
+
+.gauge-marker.current .gauge-line {
+  width: 3px;
+  background: var(--ok);
+}

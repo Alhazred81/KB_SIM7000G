@@ -1,3 +1,5 @@
+//web_ui.cpp
+
 #include "web_ui.h"
 #include <Arduino.h>
 #include <WebServer.h>
@@ -25,6 +27,7 @@ extern LedConfig gLed;
 extern NtfyClient ntfy;
 extern String gNtfyServer;
 extern String gNtfyTopic;
+extern String gNtfyNickname; // ÚJ: Eszközazonosító
 extern WindSpeedState gWindSpeed;
 extern WindDirState gWindDir;
 extern ShtSensorState gSht;
@@ -50,8 +53,8 @@ extern String gSmsSendResult;
 extern ScannedNet gScanResults[];
 extern int gScanCount;
 
-extern void saveNtfyConfig(const String& server, const String& topic);
-
+extern void saveNtfyConfig(const String& server, const String& topic, const String& nickname);
+extern String macSuffix(); // <--- EZT A SORT ADD HOZZÁ
 // Ideiglenes memória a sikeresen tesztelt, de még nem mentett PIN-nek
 static String gLastValidPin = "";
 
@@ -281,7 +284,6 @@ void handleGsm() {
   html += "<input type='text' name='smsc' value='" + gModem.smscNumber + "'>";
   html += "<button class='sec'>Mentés</button></form></div>";
 
-  // --- ÚJ: Hálózatválasztás és Kézi Rögzítés Kártya ---
   html += "<div class='card wide'><h2>Hálózatválasztás (Automata / Kézi)</h2>";
   html += "<p class='hint'>Alapértelmezésben automata, de fix telepítésnél rögzítheted a saját szolgáltatód, hogy ne keresgéljen feleslegesen.</p>";
   
@@ -332,10 +334,19 @@ void handleIot() {
   if (gData.pingResult.length()) html += "<div class='msg " + String(gData.pingOk ? "ok" : "err") + "' style='margin-top:10px'>" + htmlEscape(gData.pingResult) + "</div>";
   html += "</div>";
 
+  // FRISSÍTVE: ntfy üzenetküldés eszközazonosítóval és prioritással
   html += "<div class='card wide'><h2>ntfy Értesítések</h2>";
   html += "<form action='/ntfy-send' method='POST'>";
   html += "<label>Üzenet küldése az aktuális csatornára</label>";
   html += "<input type='text' name='msg' placeholder='Írd be az értesítés szövegét...' required>";
+  html += "<label>Prioritás</label>";
+  html += "<select name='priority'>"
+          "<option value='1'>1 - Min (Néma)</option>"
+          "<option value='2'>2 - Low</option>"
+          "<option value='3' selected>3 - Default</option>"
+          "<option value='4'>4 - High</option>"
+          "<option value='5'>5 - Max (Áttöri a némítást)</option>"
+          "</select>";
   html += "<button style='margin-top:8px'>Küldés ntfy-ra</button>";
   html += "</form>";
   html += "<hr style='border:0; border-top:1px solid var(--border); margin:15px 0;'>";
@@ -358,7 +369,14 @@ void handleNtfySend() {
   String msg = server.arg("msg");
   msg.trim();
   
-  bool ok = ntfy.send(msg.c_str(), "Kaptármonitor Értesítés");
+  // FRISSÍTVE: Prioritás és Nickname használata
+  int prioVal = server.hasArg("priority") ? server.arg("priority").toInt() : 3;
+  NtfyPriority priority = static_cast<NtfyPriority>(prioVal);
+
+  String nick = gNtfyNickname;
+  if (nick.length() == 0) nick = "szerver-" + macSuffix();
+
+  bool ok = ntfy.send(msg.c_str(), nick.c_str(), priority);
   
   if(ok) {
     diagAdd("ntfy sikeresen elküldve: " + msg);
@@ -386,13 +404,16 @@ void handleNtfyPoll() {
 }
 
 void handleSaveNtfy() {
+  // FRISSÍTVE: Nickname mező kezelése
   if (server.hasArg("ntfy_topic")) {
     String srv = server.hasArg("ntfy_server") ? server.arg("ntfy_server") : "ntfy.sh";
     String top = server.arg("ntfy_topic");
+    String nick = server.hasArg("ntfy_nickname") ? server.arg("ntfy_nickname") : "";
     srv.trim();
     top.trim();
-    saveNtfyConfig(srv, top);
-    diagAdd("ntfy konfig mentve: " + srv + "/" + top);
+    nick.trim();
+    saveNtfyConfig(srv, top, nick);
+    diagAdd("ntfy konfig mentve: " + srv + "/" + top + " (Név: " + nick + ")");
   }
   server.sendHeader("Location", "/cfg");
   server.send(302);
@@ -571,7 +592,7 @@ void handleDataPing() {
   if(sendModemBusyPage("Ping", "3", "/iot")) return;
   String target = server.hasArg("target") ? server.arg("target") : "";
   target.trim();
-  if(target.length() == 0) target = "1.1.1.1";
+  if(target.length() == 0) target = "8.8.8.8";
   dataConnPing(target);
   server.sendHeader("Location","/iot");
   server.send(302);
@@ -1123,16 +1144,18 @@ function doScan(){
   }
   html += "</select><button>Mentes & ujraindulas</button></form></div>";
 
+  // FRISSÍTVE: ntfy_nickname bekérése is a felületen
   html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
           "<form action='/save-ntfy' method='POST'>"
           "<label>ntfy Szerver</label>"
           "<input type='text' name='ntfy_server' value='" + gNtfyServer + "'>"
           "<label>Topic neve (egyedi azonosító)</label>"
           "<input type='text' name='ntfy_topic' value='" + gNtfyTopic + "' required>"
+          "<label>Eszközazonosító (Név, pl. szerver-1)</label>"
+          "<input type='text' name='ntfy_nickname' value='" + gNtfyNickname + "'>"
           "<button style='margin-top:10px'>ntfy Mentés</button>"
           "</form></div>";
 
-  // --- ÚJ: Biztonságos, kétlépcsős SIM PIN mentés és tesztelés ---
   if (server.hasArg("pin_ok") && gLastValidPin.length() > 0) {
     html += "<div class='card wide' style='border-color:var(--ok);'>"
            "<h2>🎉 SIM sikeresen feloldva!</h2>"
@@ -1223,13 +1246,15 @@ void handleTestSavePin() {
   modem.simUnlock(pin.c_str());
   delay(1200);
 
-  if (modem.getSimStatus() == 3) {
+  // JAVÍTVA: A 3-as a PUK/Anti-Theft zárolás. A sikeres feloldás (SIM_READY) értéke 1.
+  int simStat = modem.getSimStatus();
+  if (simStat == 1 /* SIM_READY */) {
     gLastValidPin = pin;
     diagAdd("SIM PIN teszt SIKERES.");
     server.sendHeader("Location", "/cfg?pin_ok=1");
   } else {
     gLastValidPin = "";
-    diagAdd("SIM PIN teszt SIKERTELEN.");
+    diagAdd("SIM PIN teszt SIKERTELEN. (Kód: " + String(simStat) + ")");
     server.sendHeader("Location", "/cfg?pin_err=1");
   }
   server.send(302);
@@ -1528,7 +1553,6 @@ void handleNetScan() {
   html += "<label>Talált hálózatok</label>";
   html += "<select name='netcode' style='margin-bottom:12px'>";
 
-  // Robusztusabb feldolgozás: végigmegyünk a nyers válaszon és kiszedjük az idézőjeles részeket
   int pos = 0;
   bool foundAny = false;
 
@@ -1541,8 +1565,6 @@ void handleNetScan() {
     String entry = rawRes.substring(start + 1, end);
     pos = end + 1;
 
-    // Az entry formátuma pl: 1,"Telekom HU","THU","21630",7
-    // Gyűjtsük ki az összes idézőjelek közötti szöveget egy tömbbe/listába
     String parts[10];
     int partCount = 0;
     int pIdx = 0;
@@ -1555,12 +1577,10 @@ void handleNetScan() {
       pIdx = q2 + 1;
     }
 
-    // Ha van legalább név és kód (általában a 0. elem a név, az utolsó előtti vagy utolsó a kód)
     if(partCount >= 2) {
       String netName = parts[0];
       String netCode = "";
       
-      // Megkeressük azt a részt, ami egy 5 jegyű szám (MCC+MNC, pl. 21630)
       for(int i = 0; i < partCount; i++) {
         if(parts[i].length() == 5 && isDigit(parts[i][0])) {
           netCode = parts[i];
@@ -1619,7 +1639,7 @@ void handleNetManual() {
 }
 
 void webBegin() {
-  server.on("/",            HTTP_GET,  handleRoot);
+  server.on("/",           HTTP_GET,  handleRoot);
   server.on("/app.js",        HTTP_GET,  handleJs);
   server.on("/style.css",     HTTP_GET,  handleStyle);
   server.on("/s.css",         HTTP_GET,  handleCss);

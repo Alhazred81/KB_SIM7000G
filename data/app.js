@@ -1,69 +1,94 @@
-function stateRow(key, val, cls = "") {
-  return `<div class='row'><span class='k'>${key}</span><span class='v ${cls}'>${val}</span></div>`;
-}
+document.addEventListener("DOMContentLoaded", () => {
+  // Adatok betöltése
+  fetch("/api/config")
+    .then((response) => response.json())
+    .then((data) => {
+      if (document.getElementById("apPass")) {
+        document.getElementById("apPass").value = data.apPass || "";
+      }
+      if (document.getElementById("ntfyTopic")) {
+        document.getElementById("ntfyTopic").value = data.ntfyTopic || "";
+      }
+      if (document.getElementById("ntfyNickname")) {
+        document.getElementById("ntfyNickname").value = data.ntfyNickname || "";
+      }
+    })
+    .catch((err) => console.error("Hiba a konfiguráció betöltésekor: ", err));
 
-async function loadHome() {
-  if (document.activeElement && document.activeElement.name === "pin") return;
-  const statusEl = document.getElementById("status");
+  // Mentés eseménykezelője
+  const btnSave = document.getElementById("btnSave");
+  if (btnSave) {
+    btnSave.addEventListener("click", () => {
+      btnSave.disabled = true;
+      btnSave.innerText = "Mentés...";
 
-  try {
-    const r = await fetch("/api/home");
-    if (!r.ok) throw new Error("HTTP hiba");
-    const d = await r.json();
+      const payload = {
+        apPass: document.getElementById("apPass")
+          ? document.getElementById("apPass").value
+          : "",
+        ntfyTopic: document.getElementById("ntfyTopic")
+          ? document.getElementById("ntfyTopic").value
+          : "",
+        ntfyNickname: document.getElementById("ntfyNickname")
+          ? document.getElementById("ntfyNickname").value
+          : "",
+      };
 
-    let html = "";
-
-    if (!d.pinSaved) {
-      html += `
-        <div class='card' style='border: 2px solid var(--warn);'>
-          <h2 style='color: var(--warn);'>⚠️ SIM PIN kód szükséges</h2>
-          <p class='hint' style='margin-bottom: 15px;'>A hálózati csatlakozáshoz meg kell adnod a SIM kártya PIN kódját. Ha nincs rajta PIN, hagyd üresen és úgy mentsd el.</p>
-          <form action='/savepin' method='POST'>
-            <input type='password' name='pin' placeholder='4-8 számjegy (pl. 1234)' pattern='[0-9]{0,8}' style='max-width: 200px;'>
-            <button type='submit' class='warn'>PIN Mentése és Csatlakozás</button>
-          </form>
-        </div>`;
-    }
-
-    html += "<div class='card'><h2>📡 Modem</h2>";
-    html += stateRow(
-      "Állapot",
-      d.modemReady ? "Kész" : "Inicializálás...",
-      d.modemReady ? "g" : "y",
-    );
-    html += stateRow(
-      "Hálózat",
-      d.registered ? "Felcsatlakozva" : "Keresés...",
-      d.registered ? "g" : "y",
-    );
-    html += stateRow("Szolgáltató", d.operator || "N/A");
-    html += stateRow("Jelerősség", d.signal ? `${d.signal} (0-31)` : "N/A");
-    html += stateRow("Típus", d.netType || "N/A");
-    html += "</div>";
-
-    html += "<div class='card'><h2>🌍 GNSS (GPS)</h2>";
-    html += stateRow(
-      "Pozíció Fix",
-      d.gnssFix ? "OK" : "Nincs fix",
-      d.gnssFix ? "g" : "r",
-    );
-    if (d.gnssFix) {
-      html += stateRow("Szélesség", `${d.lat.toFixed(6)}°`);
-      html += stateRow("Hosszúság", `${d.lon.toFixed(6)}°`);
-    } else {
-      html += stateRow("Kiinduló Széles.", `${d.lat.toFixed(6)}°`);
-      html += stateRow("Kiinduló Hossz.", `${d.lon.toFixed(6)}°`);
-    }
-    html += stateRow("Használt Műholdak", d.sat);
-    html += stateRow("NTP Helyi idő", d.time || "-");
-    html += "</div>";
-
-    statusEl.innerHTML = html;
-  } catch (err) {
-    console.error("Adatlekérési hiba:", err);
-    statusEl.innerHTML = `<div class='card' style='text-align:center;'><div class='msg warn' style='margin-bottom:0;'>⏳ Várakozás a szerverre...<br><span style='font-size:11px;font-weight:normal;'>A szerver jelenleg elfoglalt.</span></div></div>`;
+      fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.status === "ok") {
+            alert("Beállítások elmentve.");
+          } else {
+            alert("Hiba a mentés során.");
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert("Hálózati hiba mentéskor.");
+        })
+        .finally(() => {
+          btnSave.disabled = false;
+          btnSave.innerText = "Mentés";
+        });
+    });
   }
-}
 
-loadHome();
-setInterval(loadHome, 3000);
+  // Ntfy teszt eseménykezelője
+  const btnTestNtfy = document.getElementById("btnTestNtfy");
+  if (btnTestNtfy) {
+    btnTestNtfy.addEventListener("click", () => {
+      const prio = parseInt(document.getElementById("testPriority").value) || 3;
+      btnTestNtfy.disabled = true;
+      btnTestNtfy.innerText = "Küldés folyamatban...";
+
+      fetch("/api/test-ntfy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: prio }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.status === "ok") {
+            alert("Az értesítés sikeresen átment a modemen.");
+          } else {
+            alert(
+              "Hiba történt az elküldés során. Ellenőrizd a modem logokat.",
+            );
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          alert("Hálózati hiba a szerverrel való kommunikációban.");
+        })
+        .finally(() => {
+          btnTestNtfy.disabled = false;
+          btnTestNtfy.innerText = "Teszt Üzenet Küldése";
+        });
+    });
+  }
+});

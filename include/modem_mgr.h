@@ -22,6 +22,7 @@ extern bool gSmsSendInProgress;
 extern bool gModemInitRequested;
 
 extern ModemState gModem;
+extern String gManualNetCode;
 
 // ─── AT állapot és snapshot változók ────────────────────────
 extern bool gAtStatusInProgress;
@@ -42,6 +43,12 @@ String modemGetTime();
 String bestAvailableTimestamp();
 void updateModemStats();
 bool modemInit();
+
+void loadNetConfig();
+void saveNetConfig(const String& netCode);
+
+String setManualNetwork(const String& code, int act);
+String setAutoNetwork();
 
 String scanAvailableNetworks();
 String setManualNetwork(const String& numericCode, int act = 7);

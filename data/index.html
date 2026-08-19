@@ -3,215 +3,191 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>"
-    />
-    <title>Kaptármonitor</title>
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/s.css" />
+    <title>Szerver Vezérlőpult</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      /* --- HIÁNYZÓ TAB DIZÁJN PÓTLÁSA --- */
+      .nav-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 25px;
+        background: #1a1a2e;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      }
+      .nav-tabs a {
+        color: var(--txt);
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 5px;
+        background: #0a0a18;
+        font-size: 14px;
+        transition: 0.2s;
+      }
+      .nav-tabs a:hover {
+        background: #2a2a4a;
+      }
+      .nav-tabs a.active {
+        background: var(--ok);
+        color: #000;
+        font-weight: bold;
+      }
+
+      /* --- SZENZOR SKÁLA (GAUGE) JAVÍTOTT CSS --- */
+      .gauge-container {
+        /* Megnövelt oldalsó padding (40px), hogy a 0% és 100% dobozok ne lógjanak le a képernyőről */
+        padding: 25px 40px 40px 40px;
+        margin: 15px 0;
+        position: relative;
+        background: #0a0a18;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .gauge-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: var(--txt);
+        /* Megnövelt alsó margó, hogy a felső markerek ne takarják ki a címet */
+        margin-bottom: 50px;
+      }
+      .gauge-track {
+        height: 10px;
+        border-radius: 5px;
+        background: linear-gradient(
+          to right,
+          #2196f3 0%,
+          #4caf50 50%,
+          #f44336 100%
+        );
+        position: relative;
+      }
+      .gauge-track.humidity {
+        background: linear-gradient(to right, #ffc107 0%, #03a9f4 100%);
+      }
+      .gauge-marker {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: translateX(-50%);
+      }
+      .gauge-marker.top {
+        bottom: 100%;
+      }
+      .gauge-marker.bottom {
+        top: 100%;
+      }
+      .gauge-box {
+        background: #1a1a2e;
+        border: 1px solid var(--border);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        color: var(--txt2);
+        text-align: center;
+        white-space: nowrap;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+      }
+      .gauge-box.current {
+        border-color: var(--ok);
+        color: var(--txt);
+        font-weight: bold;
+        background: #2a2a4a;
+      }
+      .gauge-line {
+        width: 2px;
+        height: 15px;
+        background: var(--border);
+      }
+      .gauge-marker.top .gauge-line {
+        margin-top: 2px;
+      }
+      .gauge-marker.bottom .gauge-line {
+        margin-bottom: 2px;
+      }
+
+      .gauge-marker.current .gauge-line {
+        width: 3px;
+        background: var(--ok);
+      }
+    </style>
   </head>
   <body>
-    <!-- Fixen rögzített navigációs sáv -->
-    <nav>
-      <a href="/" class="on">&#127968; Főoldal</a>
-      <a href="/gsm">&#128241; GSM</a>
-      <a href="/iot">&#127760; Internet</a>
-      <a href="/gnss">&#128640; GPS</a>
-      <a href="/sensors">&#127777; Szenzor</a>
-      <a href="/cfg">&#9881; Konfig</a>
-      <a href="/expert">&#9888; Expert</a>
-      <a href="/diag">&#128269; Diag</a>
-    </nav>
+    <div class="container">
+      <h1>Szerver Vezérlőpult</h1>
 
-    <div class="wrap">
-      <!-- Státusz Kártya -->
-      <div class="card" id="statusCard">
-        <h2>Modem & Hálózat</h2>
-        <div id="status">Állapot betöltése...</div>
+      <!-- NAVIGÁCIÓS TABOK -->
+      <div class="nav-tabs">
+        <a href="/" class="active">Áttekintés</a>
+        <a href="/gsm">GSM</a>
+        <a href="/iot">IoT / ntfy</a>
+        <a href="/cfg">Beállítások</a>
+        <a href="/diag">Diag</a>
+        <a href="/gnss">GPS</a>
+        <a href="/sensors">Szenzorok</a>
+        <a href="/expert">Expert</a>
       </div>
 
-      <!-- Szenzorok Áttekintő Kártya a Főoldalon -->
-      <div class="card" id="homeSensorsCard">
-        <h2>🌡️ Szenzorok Áttekintés</h2>
-        <div id="homeSensorsList">
-          <div class="row">
-            <span class="k">Mérések</span><span class="v dim">Betöltés...</span>
+      <!-- Szenzorok Gyorstérképe Skálákkal -->
+      <div class="card wide">
+        <h2>Szenzorok Gyorstérképe</h2>
+
+        <div class="gauge-container">
+          <div class="gauge-title">Kaptár Belső Hőmérséklet (SHT57)</div>
+          <div class="gauge-track">
+            <div class="gauge-marker top" style="left: 0%">
+              <div class="gauge-box">Min: 12.5°C</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker top current" style="left: 75%">
+              <div class="gauge-box current">Aktuális: 28.1°C</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker top" style="left: 100%">
+              <div class="gauge-box">Max: 33.2°C</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker bottom" style="left: 45%">
+              <div class="gauge-line"></div>
+              <div class="gauge-box">Átlag: 21.4°C</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gauge-container">
+          <div class="gauge-title">Kaptár Belső Páratartalom (SHT57)</div>
+          <div class="gauge-track humidity">
+            <div class="gauge-marker top" style="left: 0%">
+              <div class="gauge-box">Min: 30%</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker top current" style="left: 60%">
+              <div class="gauge-box current">Aktuális: 55%</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker top" style="left: 100%">
+              <div class="gauge-box">Max: 72%</div>
+              <div class="gauge-line"></div>
+            </div>
+            <div class="gauge-marker bottom" style="left: 50%">
+              <div class="gauge-line"></div>
+              <div class="gauge-box">Átlag: 51%</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Mesterterv / Naptár Kártya -->
+      <!-- Rendszer Állapot Kártya -->
       <div class="card">
-        <h2>📅 Anyanevelési Mesterterv</h2>
-        <div
-          id="calendar"
-          style="
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 6px;
-            text-align: center;
-            font-size: 12px;
-            margin-top: 10px;
-          "
-        >
-          <div style="font-weight: bold; color: var(--accent)">H</div>
-          <div style="font-weight: bold; color: var(--accent)">K</div>
-          <div style="font-weight: bold; color: var(--accent)">Sze</div>
-          <div style="font-weight: bold; color: var(--accent)">Cs</div>
-          <div style="font-weight: bold; color: var(--accent)">P</div>
-          <div style="font-weight: bold; color: var(--accent)">Szo</div>
-          <div style="font-weight: bold; color: var(--accent)">V</div>
-
-          <div
-            style="
-              background: #141428;
-              padding: 8px;
-              border-radius: 4px;
-              opacity: 0.4;
-            "
-          >
-            28
-          </div>
-          <div
-            style="
-              background: #141428;
-              padding: 8px;
-              border-radius: 4px;
-              opacity: 0.4;
-            "
-          >
-            29
-          </div>
-          <div
-            style="
-              background: #141428;
-              padding: 8px;
-              border-radius: 4px;
-              opacity: 0.4;
-            "
-          >
-            30
-          </div>
-
-          <div
-            style="
-              background: var(--accent);
-              color: #fff;
-              padding: 8px;
-              border-radius: 4px;
-              font-weight: bold;
-              position: relative;
-            "
-          >
-            1
-            <span
-              style="
-                position: absolute;
-                top: -4px;
-                right: -4px;
-                background: var(--err);
-                color: #fff;
-                font-size: 9px;
-                padding: 1px 4px;
-                border-radius: 50%;
-                border: 1px solid #fff;
-              "
-              >2</span
-            >
-            <br /><span style="font-size: 9px">Átvétel</span>
-          </div>
-
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            2
-          </div>
-          <div
-            style="
-              background: #141428;
-              padding: 8px;
-              border-radius: 4px;
-              position: relative;
-            "
-          >
-            3
-            <span
-              style="
-                position: absolute;
-                top: -4px;
-                right: -4px;
-                background: var(--warn);
-                color: #000;
-                font-size: 9px;
-                padding: 1px 4px;
-                border-radius: 50%;
-                border: 1px solid #fff;
-              "
-              >1</span
-            >
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            4
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            5
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            6
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            7
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            8
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            9
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            10
-          </div>
-          <div style="background: #141428; padding: 8px; border-radius: 4px">
-            11
-          </div>
-        </div>
-        <div class="hint" style="margin-top: 10px">
-          Petés anyanevelési ütemezés aktiválva.
+        <h2>Rendszer Állapot</h2>
+        <div id="statusArea">
+          <p>Adatok betöltése...</p>
         </div>
       </div>
     </div>
 
-    <script src="/app.js"></script>
-    <script>
-      // Főoldali szenzorok lekérdezése az API-ból
-      function loadHomeSensors() {
-        fetch("/sensstatus")
-          .then((r) => r.json())
-          .then((d) => {
-            let html = "";
-            for (let key in d) {
-              let s = d[key];
-              let val =
-                s.value || (s.enabled ? "mérés folyamatban..." : "kikapcsolva");
-              let cls = s.value ? (s.ok ? "g" : "y") : "dim";
-              // Szép magyar nevek hozzárendelése a kulcsokhoz
-              let names = {
-                windspeed: "Szélsebesség",
-                winddir: "Szélirány",
-                sht: "SHT Hő/Pára",
-                rain: "Esőszenzor",
-                mpu: "MPU6050",
-                ahtbmp: "AHT+BMP",
-                ltr: "UV LTR-390",
-              };
-              let label = names[key] || key;
-              html += `<div class='row'><span class='k'>${label}</span><span class='v ${cls}'>${val}</span></div>`;
-            }
-            document.getElementById("homeSensorsList").innerHTML = html;
-          })
-          .catch((err) => {});
-      }
-      setInterval(loadHomeSensors, 4000);
-      loadHomeSensors();
-    </script>
+    <script src="app.js"></script>
   </body>
 </html>

@@ -22,15 +22,15 @@
 #include "web_ui.h"
 #include "wifi_sta.h"
 
-
-
 // ─── Globálisok ─────────────────────────────────────────────
 HardwareSerial modemSerial(1);
 TinyGsm        modem(modemSerial);
+bool gStartupNtfySent = false;
 
 // --- ÚJ: NtfyClient példányosítása ---
-// Átadjuk a modem soros portját, a topic nevét, és a szervert[cite: 2].
+// Átadjuk a modem soros portját, a topic nevét, és a szervert.
 NtfyClient     ntfy(modemSerial, "kb_sim7000g_balazs", "ntfy.sh");
+
 
 WebServer      server(80);
 DNSServer      dnsServer;
@@ -61,6 +61,10 @@ bool           gSmsSendInProgress = false;
 bool           gSmsSendDone       = false;
 String         gSmsSendResult     = ""; 
 
+void loadSmsInboxLimit() {
+  // Ha EEPROM-ból olvasod, itt kell betölteni, 
+  // ha fix érték, akkor adhatsz vissza egy alapértelmezettet is:
+}
 
 String macSuffix() {
   uint8_t mac[6]; WiFi.macAddress(mac);
@@ -236,27 +240,27 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println(F("\n=== KB SIM7000G indul ==="));
+  
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS MOUNT HIBA");
-} else {
+  } else {
     Serial.println("LittleFS OK");
-}
-Serial.println("=== LITTLEFS FILES ===");
-Serial.printf("Total bytes: %u\n", LittleFS.totalBytes());
-Serial.printf("Used bytes : %u\n", LittleFS.usedBytes());
-File test = LittleFS.open("/index.html", "r");
-Serial.println(test ? "INDEX OPEN OK" : "INDEX OPEN FAIL");
+  }
+  
+  Serial.println("=== LITTLEFS FILES ===");
+  Serial.printf("Total bytes: %u\n", LittleFS.totalBytes());
+  Serial.printf("Used bytes : %u\n", LittleFS.usedBytes());
+  File test = LittleFS.open("/index.html", "r");
+  Serial.println(test ? "INDEX OPEN OK" : "INDEX OPEN FAIL");
 
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
 
-File root = LittleFS.open("/");
-File file = root.openNextFile();
-
-while (file) {
+  while (file) {
     Serial.println(file.name());
     file = root.openNextFile();
-}
-
-Serial.println("======================");
+  }
+  Serial.println("======================");
 
   EEPROM.begin(EEPROM_SIZE);
 
@@ -288,21 +292,7 @@ Serial.println("======================");
   bool ok = modemInit();
   
   // --- ÚJ: ntfy debug engedélyezése ---
-  ntfy.setDebugStream(&Serial); // A soros monitorra is kiírja a HTTP kérések eredményét[cite: 2]
-
-  if(ok) {
-    diagAdd("Modem OK: "+gModem.operatorName);
-    gnssStart(); 
-    
-    // --- ÚJ: Teszt push értesítés küldése a telefonodra ---
-    // Használjuk a prioritást (Default) és a címet a szebb megjelenésért[cite: 2]
-    ntfy.send("A rendszer sikeresen elindult és a modem felcsatlakozott!", "SIM7000G Start", NtfyPriority::Default);
-    
-  } else {
-    diagAdd("Modem HIBA: "+gModem.lastError);
-  }
-
-  Serial.println(F("=== Kész. Ird 'help' a serial parancsokhoz. ==="));
+  ntfy.setDebugStream(&Serial); // A soros monitorra is kiírja a HTTP kérések eredményét
 
   if(ok) {
     diagAdd("Modem OK: "+gModem.operatorName);
@@ -311,14 +301,12 @@ Serial.println("======================");
     // --- ÚJ: Automatikus adatkapcsolat aktiválása hálózatra lépés után ---
     diagAdd("Adatkapcsolat automatikus indítása...");
     dataConnEnable();
-    
-    // Teszt push értesítés küldése
-    ntfy.send("A rendszer sikeresen elindult, a modem felcsatlakozott és az adatkapcsolat aktív!", "SIM7000G Start", NtfyPriority::Default);
-    
+        
   } else {
     diagAdd("Modem HIBA: "+gModem.lastError);
   }
 
+  Serial.println(F("=== Kész. Ird 'help' a serial parancsokhoz. ==="));
 }
 
 void loop() {
@@ -336,6 +324,18 @@ void loop() {
   wifiStaWatchdog();
   smsInboxLoop();
   sensorsLoop();
+
+  // --- ÚJ: Rendszerindítási értesítés küldése NTP és aktív net után ---
+  if (!gStartupNtfySent && gTime.synced && gData.active) {
+    gStartupNtfySent = true;
+    diagAdd("NTP szinkronizálva. Ntfy teszt küldés indítása...");
+    bool sent = ntfy.send("A szerver elindult és az idő szinkronizálva van!", "Kaptármonitor Start", NtfyPriority::Default);
+    if (sent) {
+      diagAdd("Ntfy üzenet sikeresen elküldve!");
+    } else {
+      diagAdd("Ntfy küldési hiba!");
+    }
+  }
 
   if(gModemInitRequested) {
     gModemInitRequested = false;

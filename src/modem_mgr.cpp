@@ -1,3 +1,6 @@
+//modem_mgr.cpp
+
+#include <LittleFS.h>
 #include "modem_mgr.h"
 
 unsigned long gSmsTotalReceived = 0;
@@ -8,6 +11,7 @@ ReceivedSms gSmsInbox[SMS_INBOX_HARD_MAX];
 int gSmsInboxCount = 0;
 int gSmsInboxHead = 0;
 int gSmsInboxLimit = SMS_INBOX_DEFAULT_LIMIT;
+String gManualNetCode = "";
 
 void diagAddWithTimestamp(const String& msg) {
   unsigned long ms = millis();
@@ -36,7 +40,7 @@ void modemPowerOn() {
 
   diagAddWithTimestamp(F("[MODEM] Nem valaszol, PWRKEY pulzus kuldese..."));
   digitalWrite(MODEM_PWRKEY, LOW);  delay(1200); yield(); 
-  digitalWrite(MODEM_PWRKEY, HIGH);                       
+  digitalWrite(MODEM_PWRKEY, HIGH);                     
   diagAddWithTimestamp(F("[MODEM] Varakozas a felallasra..."));
   delay(5000); yield();  
   gModem.powered = true;
@@ -217,21 +221,36 @@ bool modemInit() {
   gModem.initPhase = "IMEI lekerdezese...";
   gModem.simIMEI = modem.getIMEI();
 
-  gModem.initPhase = "Halozatra csatlakozas (akar 30 mp)...";
+  gModem.initPhase = "Halozatra csatlakozas...";
   gModem.initPhaseNum = 5;
-  diagAddWithTimestamp(F("[MODEM] Halozat varas..."));
-  if(!modem.waitForNetwork(30000L)) {
-    int csq = modem.getSignalQuality();
-    gModem.lastError = "Nincs halozat (CSQ=" + String(csq) + ").";
-    diagAddWithTimestamp("[MODEM] NINCS HALOZAT! " + gModem.lastError);
-    gModem.initInProgress = false;
-    gModem.initPhase = "Sikertelen: nincs halozat";
-    return false;
+  
+  // Gyorsított hálózatregisztráció ellenőrzés (ha van mentett kézi kód)
+  bool netConnected = false;
+  if (gManualNetCode.length() >= 5) {
+    diagAddWithTimestamp("[MODEM] Gyors csatlakozás kézi hálózathoz: " + gManualNetCode);
+    String manualCmd = "AT+COPS=1,2,\"" + gManualNetCode + "\"";
+    modemSerial.println(manualCmd);
+    String manualResp = modemReadUntilFinal(15000);
+    if (manualResp.indexOf("OK") >= 0) {
+      netConnected = modem.waitForNetwork(10000L);
+    }
+  }
+  
+  if (!netConnected) {
+    diagAddWithTimestamp(F("[MODEM] Automatikus hálózatkeresés indítása (AT+COPS=0)..."));
+    if(!modem.waitForNetwork(30000L)) {
+      int csq = modem.getSignalQuality();
+      gModem.lastError = "Nincs halozat (CSQ=" + String(csq) + ").";
+      diagAddWithTimestamp("[MODEM] NINCS HALOZAT! " + gModem.lastError);
+      gModem.initInProgress = false;
+      gModem.initPhase = "Sikertelen: nincs halozat";
+      return false;
+    }
   }
 
-  gModem.ready       = true;
+  gModem.ready      = true;
   gModem.registered = true;
-  gModem.pinOk       = true;
+  gModem.pinOk      = true;
   
   String op = modem.getOperator();
   if(op == "21630" || op == "21625") op = "Telekom HU (" + op + ")";
@@ -456,9 +475,17 @@ String dataConnEnable() {
     gData.lastError = "Adatkapcsolat sikertelen.";
     gData.active = false;
   } else {
-    gData.ip = modem.localIP().toString();
-    gData.active = true;
-    diagAddWithTimestamp("Adatkapcsolat felepitve. IP: " + gData.ip);
+    modem.sendAT("+CNACT=1,1");
+    String resp = modemReadUntilFinal(3000);
+    
+    if (resp.indexOf("OK") >= 0 || resp.indexOf("+CNACT:") >= 0) {
+      gData.ip = modem.localIP().toString();
+      gData.active = true;
+      diagAddWithTimestamp("Adatkapcsolat felepitve (CNACT OK). IP: " + gData.ip);
+    } else {
+      gData.lastError = "CNACT aktivalas sikertelen.";
+      gData.active = false;
+    }
   }
   
   gData.inProgress = false;
@@ -542,24 +569,66 @@ String dataConnDisable() {
 bool sendNtfyAlert(const String& message) {
   if (!gData.active) {
     String err = dataConnEnable();
-    if (!gData.active) return false;
+    if (!gData.active) {
+      diagAddWithTimestamp("Ntfy hiba: Nincs aktív adatkapcsolat.");
+      return false;
+    }
   }
 
+  String serverToUse = gNtfyServer.length() > 0 ? gNtfyServer : "https://ntfy.sh";
+  String topicToUse = gNtfyTopic.length() > 0 ? gNtfyTopic : "balazs_kaptar_riasztas";
+  
+  if (serverToUse.startsWith("http://")) {
+    serverToUse.replace("http://", "https://");
+  } else if (!serverToUse.startsWith("https://")) {
+    serverToUse = "https://" + serverToUse;
+  }
+
+  String url = serverToUse;
+  if (!url.endsWith("/")) url += "/";
+  if (topicToUse.startsWith("/")) topicToUse = topicToUse.substring(1);
+  url += topicToUse;
+
+  diagAddWithTimestamp("HTTPS Ntfy küldés ide: " + url);
   modemDrain(50);
-  modemSerial.println("AT+HTTPINIT");
-  String r1 = modemReadUntilFinal(1500);
-  if (r1.indexOf("ERROR") >= 0) {
-    modemSerial.println("AT+HTTPTERM");
-    modemReadUntilFinal(1000);
-    modemSerial.println("AT+HTTPINIT");
-    modemReadUntilFinal(1500);
-  }
 
-  modemSerial.println("AT+HTTPPARA=\"URL\",\"http://ntfy.sh/balazs_kaptar_riasztas\"");
-  modemReadUntilFinal(1500);
+  modemSerial.println("AT+SHDISC");
+  diagAddWithTimestamp("STEP SHDISC: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+CSSLCFG=\"sslversion\",1,4");
+  diagAddWithTimestamp("STEP SSLVER: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+CSSLCFG=\"authmode\",1,0");
+  diagAddWithTimestamp("STEP AUTHMODE: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+SHCONF=\"URL\",\"" + url + "\"");
+  diagAddWithTimestamp("STEP CONF URL: " + modemReadUntilFinal(1500));
+
+  modemSerial.println("AT+SHCONF=\"BODYLEN\",1024");
+  diagAddWithTimestamp("STEP CONF BODY: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+SHCONF=\"HEADERLEN\",350");
+  diagAddWithTimestamp("STEP CONF HDR: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+SHCONF=\"SSLPAR\",1");
+  diagAddWithTimestamp("STEP CONF SSL: " + modemReadUntilFinal(1000));
+
+  modemSerial.println("AT+SHCONN");
+  String rConn = modemReadUntilFinal(6000);
+  diagAddWithTimestamp("STEP SHCONN válasz: [" + rConn + "]");
+  
+  if (rConn.indexOf("OK") < 0) {
+    diagAddWithTimestamp("Ntfy hiba: SHCONN elszállt.");
+    modemSerial.println("AT+SHDISC");
+    modemReadUntilFinal(1000);
+    return false;
+  }
 
   int len = message.length();
-  modemSerial.print("AT+HTTPDATA=");
+  modemSerial.println("AT+SHSTATE=1");
+  modemReadUntilFinal(1000);
+
+  modemSerial.print("AT+SHDATA=");
   modemSerial.print(len);
   modemSerial.println(",10000");
 
@@ -577,41 +646,29 @@ bool sendNtfyAlert(const String& message) {
   }
 
   if (!promptFound) {
-    modemSerial.println("AT+HTTPTERM");
-    modemReadUntilFinal(1000);
+    diagAddWithTimestamp("Ntfy hiba: SHDATA DOWNLOAD prompt időtúllépés.");
+    modemSerial.println("AT+SHDISC");
     return false;
   }
 
   modemSerial.print(message);
   delay(200);
-  modemReadUntilFinal(2000);
+  diagAddWithTimestamp("STEP SHDATA beíratás: " + modemReadUntilFinal(2000));
 
-  modemSerial.println("AT+HTTPACTION=1");
-  String actionResp = modemReadUntilFinal(5000);
+  modemSerial.println("AT+SHREQ=\"" + url + "\",2");
+  String actionResp = modemReadUntilFinal(10000);
+  diagAddWithTimestamp("STEP SHREQ válasz: [" + actionResp + "]");
 
-  modemSerial.println("AT+HTTPTERM");
+  modemSerial.println("AT+SHDISC");
   modemReadUntilFinal(1500);
 
-  return (actionResp.indexOf("+HTTPACTION: 1,200") >= 0);
-}
-
-void saveSmsInboxLimit(int limit) {
-  if(limit < 1) limit = 1;
-  if(limit > SMS_INBOX_HARD_MAX) limit = SMS_INBOX_HARD_MAX;
-  EEPROM.write(ADDR_SMS_INBOX_LIMIT, (uint8_t)limit);
-  EEPROM.commit();
-  gSmsInboxLimit = limit;
-  gSmsInboxCount = 0;
-  gSmsInboxHead  = 0;
-}
-
-void loadSmsInboxLimit() {
-  uint8_t v = EEPROM.read(ADDR_SMS_INBOX_LIMIT);
-  if(v == 0 || v == 0xFF || v > SMS_INBOX_HARD_MAX) {
-    gSmsInboxLimit = SMS_INBOX_DEFAULT_LIMIT;
+  bool success = (actionResp.indexOf("+SHREQ: \"POST\"") >= 0 && actionResp.indexOf(",200,") >= 0);
+  if (!success) {
+    diagAddWithTimestamp("Ntfy hiba: Nem érkezett 200-as válasz a SHREQ-re.");
   } else {
-    gSmsInboxLimit = v;
+    diagAddWithTimestamp("HTTPS Ntfy üzenet sikeresen elküldve!");
   }
+  return success;
 }
 
 void smsInboxAdd(const String& sender, const String& timestamp, const String& text) {
@@ -828,7 +885,7 @@ void refreshAtStatusSnapshot() {
 
   gAtStatusInProgress = true;
   gAtStatusSnapshot = "========================================\n";
-  gAtStatusSnapshot += "        AT ALLAPOT SNAPSHOT             \n";
+  gAtStatusSnapshot += "         AT ALLAPOT SNAPSHOT            \n";
   gAtStatusSnapshot += "========================================\n";
   gAtStatusSnapshot += "Ido: " + bestAvailableTimestamp() + "\n";
   gAtStatusSnapshot += "========================================\n\n";
@@ -903,25 +960,45 @@ String scanAvailableNetworks() {
   return resp;
 }
 
-// Hálózat rögzítése kézi módban
-String setManualNetwork(const String& numericCode, int act) {
-  if(!gModem.ready) return "A modem nincs kész.";
-  modemDrain();
-  String cmd = "AT+COPS=1,2,\"" + numericCode + "\"," + String(act);
-  modemSerial.println(cmd);
-  String resp = modemReadUntilFinal(10000);
-  if(resp.indexOf("OK") >= 0) {
-    return ""; 
-  }
-  return "Hálózat rögzítési hiba: " + resp;
+void loadNetConfig() {
+    if (LittleFS.exists("/net.cfg")) {
+        File f = LittleFS.open("/net.cfg", "r");
+        if (f) {
+            gManualNetCode = f.readStringUntil('\n');
+            gManualNetCode.trim();
+            f.close();
+        }
+    }
 }
 
-// Visszaváltás automatikusra
+void saveNetConfig(const String& netCode) {
+    gManualNetCode = netCode;
+    File f = LittleFS.open("/net.cfg", "w");
+    if (f) {
+        f.println(gManualNetCode);
+        f.close();
+    }
+}
+
+String setManualNetwork(const String& code, int act) {
+    if (code.length() < 5) return "Érvénytelen hálózati kód.";
+    
+    // AT+COPS=1 (kézi), 2 (numerikus formátum), "kód"
+    String cmd = "AT+COPS=1,2,\"" + code + "\"";
+    String resp = modemAtQuery(cmd, 35000);
+    
+    if (resp.indexOf("OK") != -1) {
+        saveNetConfig(code); // Sikeres csatlakozás után mentjük
+        return ""; 
+    }
+    return "A modem elutasította a kézi hálózatot.";
+}
+
 String setAutoNetwork() {
-  if(!gModem.ready) return "A modem nincs kész.";
-  modemDrain();
-  modemSerial.println("AT+COPS=0");
-  String resp = modemReadUntilFinal(5000);
-  if(resp.indexOf("OK") >= 0) return "";
-  return "Hiba az automatikus módra váltáskor.";
+    String resp = modemAtQuery("AT+COPS=0", 35000);
+    if (resp.indexOf("OK") != -1) {
+        saveNetConfig(""); // Üres string jelzi az automatikus módot
+        return "";
+    }
+    return "Hiba az automatikus mód visszaállításakor.";
 }

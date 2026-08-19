@@ -1,10 +1,12 @@
-//ntfyclient.cpp
+//ntfyClient.cpp
 
 #include "NtfyClient.h"
 #include <LittleFS.h>
 
-String gNtfyServer = "ntfy.sh";
-String gNtfyTopic = "kaptar_alap";
+// Alapértelmezett beállítások
+String gNtfyTopic = "KB_Teszt_20260813_666"; 
+String gNtfyServer = "http://ntfy.sh"; 
+String gNtfyNickname = ""; 
 
 void loadNtfyConfig() {
   if (LittleFS.exists("/ntfy.cfg")) {
@@ -12,41 +14,43 @@ void loadNtfyConfig() {
     if (f) {
       gNtfyServer = f.readStringUntil('\n'); gNtfyServer.trim();
       gNtfyTopic = f.readStringUntil('\n');  gNtfyTopic.trim();
+      gNtfyNickname = f.readStringUntil('\n'); gNtfyNickname.trim();
       f.close();
     }
   }
 }
 
-void saveNtfyConfig(const String& server, const String& topic) {
+void saveNtfyConfig(const String& server, const String& topic, const String& nickname) {
   gNtfyServer = server;
   gNtfyTopic = topic;
+  gNtfyNickname = nickname;
+  
   File f = LittleFS.open("/ntfy.cfg", "w");
   if (f) {
     f.println(gNtfyServer);
     f.println(gNtfyTopic);
+    f.println(gNtfyNickname);
     f.close();
   }
 }
 
-NtfyClient::NtfyClient(Stream& modemStream, const char* defaultTopic, const char* server)
-    : _modem(modemStream), _defaultTopic(defaultTopic ? defaultTopic : ""), _server(server), _lastHttpCode(0), _dbgStream(nullptr) {}
+NtfyClient::NtfyClient(Stream& modemStream, const char* defaultTopic, const char* serverAddress)
+    : _modem(modemStream), _lastHttpCode(0), _dbgStream(nullptr) {
+    // Itt direkt nem tároljuk el a paramétereket fixen, hogy mindig a dinamikus globálisat használja
+}
 
 void NtfyClient::setTopic(const char* topic) {
     if (topic) {
-        _defaultTopic = topic;
+        gNtfyTopic = topic;
     }
 }
 
 void NtfyClient::logDebug(const String& str) {
-    if (_dbgStream) {
-        _dbgStream->println("[NTFY] " + str);
-    }
+    if (_dbgStream) _dbgStream->println("[NTFY] " + str);
 }
 
 void NtfyClient::flushInput() {
-    while (_modem.available()) {
-        _modem.read();
-    }
+    while (_modem.available()) _modem.read();
 }
 
 bool NtfyClient::sendCommand(const String& cmd, const char* expectedResponse, uint32_t timeoutMs) {
@@ -57,6 +61,7 @@ bool NtfyClient::sendCommand(const String& cmd, const char* expectedResponse, ui
     uint32_t start = millis();
     String response = "";
     while (millis() - start < timeoutMs) {
+        yield(); 
         while (_modem.available()) {
             char c = _modem.read();
             response += c;
@@ -83,23 +88,27 @@ bool NtfyClient::waitForPrompt(const String& cmd, uint32_t timeoutMs) {
     uint32_t start = millis();
     String response = "";
     while (millis() - start < timeoutMs) {
+        yield(); 
         while (_modem.available()) {
             char c = _modem.read();
             response += c;
             if (response.indexOf("DOWNLOAD") != -1 || response.indexOf(">") != -1) {
+                logDebug("Prompt received OK");
                 return true;
             }
             if (response.indexOf("ERROR") != -1) {
+                logDebug("Prompt ERROR received");
                 return false;
             }
         }
         delay(10);
     }
+    logDebug("Prompt TIMEOUT");
     return false;
 }
 
 bool NtfyClient::send(const char* message, const char* title, NtfyPriority priority) {
-    return sendToTopic(_defaultTopic.c_str(), message, false, title, priority);
+    return sendToTopic(gNtfyTopic.c_str(), message, false, title, priority);
 }
 
 bool NtfyClient::sendToTopic(const char* topic, const char* message, bool retainTopic, const char* title, NtfyPriority priority) {
@@ -112,8 +121,10 @@ bool NtfyClient::sendToTopic(const char* topic, const char* message, bool retain
     return publish(msg);
 }
 
+// --- KLASSZIKUS HTTP STACK ---
 bool NtfyClient::publish(const NtfyMessage& msg, uint32_t timeoutMs) {
-    String activeTopic = (msg.topic && strlen(msg.topic) > 0) ? String(msg.topic) : _defaultTopic;
+    // DINAMIKUS ÉRTÉKOLVASÁS: Mindig az aktuális globális topicot használjuk!
+    String activeTopic = (msg.topic && strlen(msg.topic) > 0) ? String(msg.topic) : gNtfyTopic;
 
     if (activeTopic.length() == 0 || !msg.message) {
         logDebug("Topic or message missing!");
@@ -121,56 +132,56 @@ bool NtfyClient::publish(const NtfyMessage& msg, uint32_t timeoutMs) {
     }
 
     if (msg.updateDefaultTopic && msg.topic && strlen(msg.topic) > 0) {
-        _defaultTopic = msg.topic;
-        logDebug("Default topic updated and retained: " + _defaultTopic);
+        gNtfyTopic = msg.topic;
     }
 
     _lastHttpCode = 0;
 
-    sendCommand("AT+HTTPTERM", "OK", 1000);
-
-    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) {
-        logDebug("HTTPINIT failed");
-        return false;
+    // DINAMIKUS ÉRTÉKOLVASÁS: Mindig az aktuális globális szervert használjuk!
+    String serverToUse = gNtfyServer.length() > 0 ? gNtfyServer : "http://ntfy.sh";
+    
+    if (serverToUse.startsWith("https://")) {
+        serverToUse.replace("https://", "http://");
+    } else if (!serverToUse.startsWith("http://")) {
+        serverToUse = "http://" + serverToUse;
     }
 
-    sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000);
-
-    String url = "http://";
-    url += _server;
-    url += "/";
+    String url = serverToUse;
+    if (!url.endsWith("/")) url += "/";
     url += activeTopic;
 
+    bool firstParam = true;
+    if (msg.title && strlen(msg.title) > 0) {
+        String encodedTitle = msg.title;
+        encodedTitle.replace(" ", "+");
+        url += (firstParam ? "?" : "&") + String("title=") + encodedTitle;
+        firstParam = false;
+    }
+    
+    if (msg.priority != NtfyPriority::Default) {
+        url += (firstParam ? "?" : "&") + String("priority=") + String(static_cast<int>(msg.priority));
+        firstParam = false;
+    }
+
+    logDebug("HTTP Publishing to URL: " + url);
+
+    sendCommand("AT+HTTPTERM", "OK", 1000);
+
+    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) return false;
+
+    sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000);
+    
     if (!sendCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"", "OK", 2000)) {
         sendCommand("AT+HTTPTERM", "OK", 1000);
         return false;
     }
 
-    String jsonPayload = "{";
-    jsonPayload += "\"topic\":\"" + activeTopic + "\",";
-    jsonPayload += "\"message\":\"" + String(msg.message) + "\"";
-    
-    if (msg.title && strlen(msg.title) > 0) {
-        jsonPayload += ",\"title\":\"" + String(msg.title) + "\"";
-    }
-    
-    jsonPayload += ",\"priority\":" + String(static_cast<int>(msg.priority));
-    
-    if (msg.tags && strlen(msg.tags) > 0) {
-        jsonPayload += ",\"tags\":[\"";
-        String tagStr = msg.tags;
-        tagStr.replace(",", "\",\"");
-        jsonPayload += tagStr + "\"]";
-    }
-    
-    if (msg.clickUrl && strlen(msg.clickUrl) > 0) {
-        jsonPayload += ",\"click\":\"" + String(msg.clickUrl) + "\"";
-    }
-    jsonPayload += "}";
+    sendCommand("AT+HTTPPARA=\"CONTENT\",\"text/plain\"", "OK", 2000);
 
-    sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 2000);
-
-    size_t payloadLen = jsonPayload.length();
+    String textPayload = String(msg.message);
+    size_t payloadLen = textPayload.length();
+    
+    flushInput();
     String dataCmd = "AT+HTTPDATA=" + String(payloadLen) + ",10000";
 
     if (!waitForPrompt(dataCmd, 5000)) {
@@ -179,21 +190,53 @@ bool NtfyClient::publish(const NtfyMessage& msg, uint32_t timeoutMs) {
         return false;
     }
 
-    _modem.print(jsonPayload);
     delay(100);
+    _modem.print(textPayload);
+    _modem.flush();
+    
+    // Robusztus válaszolvasó
+    uint32_t dataStart = millis();
+    bool dataOk = false;
+    String dataResp = "";
+    
+    while (millis() - dataStart < 5000) {
+        yield();
+        while (_modem.available()) {
+            char c = _modem.read();
+            dataResp += c;
+        }
+        if (dataResp.indexOf("OK") != -1) {
+            dataOk = true;
+            break;
+        }
+        if (dataResp.indexOf("ERROR") != -1) {
+            break;
+        }
+        delay(10);
+    }
+    
+    if (!dataOk) {
+        dataResp.replace("\r", "<CR>");
+        dataResp.replace("\n", "<LF>");
+        logDebug("Failed to ingest HTTPDATA. Modem resp: " + dataResp);
+        sendCommand("AT+HTTPTERM", "OK", 1000);
+        return false;
+    }
 
     flushInput();
-    logDebug("Executing AT+HTTPACTION=1 (POST -> " + activeTopic + ")");
+    logDebug("Executing AT+HTTPACTION=1 (POST)");
     _modem.println("AT+HTTPACTION=1");
 
     uint32_t start = millis();
     bool actionCompleted = false;
+    uint32_t actionTimeout = 35000;
 
-    while (millis() - start < timeoutMs) {
+    while (millis() - start < actionTimeout) {
+        yield(); 
         if (_modem.available()) {
             String line = _modem.readStringUntil('\n');
             line.trim();
-            logDebug("RESP: " + line);
+            if (line.length() > 0) logDebug("RESP: " + line);
 
             if (line.startsWith("+HTTPACTION:")) {
                 int firstComma = line.indexOf(',');
@@ -229,6 +272,7 @@ String NtfyClient::readHttpResponseBody(uint32_t timeoutMs) {
     bool readingBody = false;
 
     while (millis() - start < timeoutMs) {
+        yield();
         if (_modem.available()) {
             String line = _modem.readStringUntil('\n');
             line.trim();
@@ -251,26 +295,24 @@ String NtfyClient::readHttpResponseBody(uint32_t timeoutMs) {
 }
 
 NtfyPollResult NtfyClient::pollMessages(const char* since, const char* topic, uint32_t timeoutMs) {
-    String activeTopic = (topic && strlen(topic) > 0) ? String(topic) : _defaultTopic;
+    String activeTopic = (topic && strlen(topic) > 0) ? String(topic) : gNtfyTopic;
     NtfyPollResult result;
 
-    if (activeTopic.length() == 0) {
-        logDebug("Poll error: No topic specified!");
-        return result;
+    if (activeTopic.length() == 0) return result;
+
+    String serverToUse = gNtfyServer.length() > 0 ? gNtfyServer : "http://ntfy.sh";
+    if (serverToUse.startsWith("https://")) {
+        serverToUse.replace("https://", "http://");
+    } else if (!serverToUse.startsWith("http://")) {
+        serverToUse = "http://" + serverToUse;
     }
 
     sendCommand("AT+HTTPTERM", "OK", 1000);
-
-    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) {
-        logDebug("HTTPINIT failed");
-        return result;
-    }
-
+    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) return result;
     sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000);
 
-    String url = "http://";
-    url += _server;
-    url += "/";
+    String url = serverToUse;
+    if (!url.endsWith("/")) url += "/";
     url += activeTopic;
     url += "/json?poll=1";
     if (since && strlen(since) > 0) {
@@ -284,7 +326,6 @@ NtfyPollResult NtfyClient::pollMessages(const char* since, const char* topic, ui
     }
 
     flushInput();
-    logDebug("Executing AT+HTTPACTION=0 (GET -> " + url + ")");
     _modem.println("AT+HTTPACTION=0");
 
     uint32_t start = millis();
@@ -292,10 +333,10 @@ NtfyPollResult NtfyClient::pollMessages(const char* since, const char* topic, ui
     int dataLen = 0;
 
     while (millis() - start < timeoutMs) {
+        yield();
         if (_modem.available()) {
             String line = _modem.readStringUntil('\n');
             line.trim();
-            logDebug("RESP: " + line);
 
             if (line.startsWith("+HTTPACTION:")) {
                 int firstComma = line.indexOf(',');
@@ -312,15 +353,11 @@ NtfyPollResult NtfyClient::pollMessages(const char* since, const char* topic, ui
     }
 
     result.httpCode = _lastHttpCode;
-
     if (actionCompleted && _lastHttpCode >= 200 && _lastHttpCode < 300) {
         if (dataLen > 0) {
             result.rawPayload = readHttpResponseBody(5000);
         }
         result.success = true;
-        logDebug("Poll successful. Body: " + result.rawPayload);
-    } else {
-        logDebug("Poll failed! HTTP Code: " + String(_lastHttpCode));
     }
 
     sendCommand("AT+HTTPTERM", "OK", 2000);
@@ -328,25 +365,24 @@ NtfyPollResult NtfyClient::pollMessages(const char* since, const char* topic, ui
 }
 
 NtfyPollResult NtfyClient::pollRaw(const char* since, const char* topic, uint32_t timeoutMs) {
-    String activeTopic = (topic && strlen(topic) > 0) ? String(topic) : _defaultTopic;
+    String activeTopic = (topic && strlen(topic) > 0) ? String(topic) : gNtfyTopic;
     NtfyPollResult result;
 
-    if (activeTopic.length() == 0) {
-        logDebug("Poll error: No topic specified!");
-        return result;
+    if (activeTopic.length() == 0) return result;
+
+    String serverToUse = gNtfyServer.length() > 0 ? gNtfyServer : "http://ntfy.sh";
+    if (serverToUse.startsWith("https://")) {
+        serverToUse.replace("https://", "http://");
+    } else if (!serverToUse.startsWith("http://")) {
+        serverToUse = "http://" + serverToUse;
     }
 
     sendCommand("AT+HTTPTERM", "OK", 1000);
-
-    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) {
-        return result;
-    }
-
+    if (!sendCommand("AT+HTTPINIT", "OK", 3000)) return result;
     sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000);
 
-    String url = "http://";
-    url += _server;
-    url += "/";
+    String url = serverToUse;
+    if (!url.endsWith("/")) url += "/";
     url += activeTopic;
     url += "/raw?poll=1";
     if (since && strlen(since) > 0) {
@@ -360,7 +396,6 @@ NtfyPollResult NtfyClient::pollRaw(const char* since, const char* topic, uint32_
     }
 
     flushInput();
-    logDebug("Executing AT+HTTPACTION=0 (GET Raw)");
     _modem.println("AT+HTTPACTION=0");
 
     uint32_t start = millis();
@@ -368,6 +403,7 @@ NtfyPollResult NtfyClient::pollRaw(const char* since, const char* topic, uint32_
     int dataLen = 0;
 
     while (millis() - start < timeoutMs) {
+        yield();
         if (_modem.available()) {
             String line = _modem.readStringUntil('\n');
             line.trim();
@@ -387,7 +423,6 @@ NtfyPollResult NtfyClient::pollRaw(const char* since, const char* topic, uint32_
     }
 
     result.httpCode = _lastHttpCode;
-
     if (actionCompleted && _lastHttpCode >= 200 && _lastHttpCode < 300) {
         if (dataLen > 0) {
             result.rawPayload = readHttpResponseBody(5000);
@@ -397,4 +432,4 @@ NtfyPollResult NtfyClient::pollRaw(const char* since, const char* topic, uint32_
 
     sendCommand("AT+HTTPTERM", "OK", 2000);
     return result;
-}   
+}

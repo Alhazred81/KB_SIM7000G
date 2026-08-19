@@ -1,12 +1,11 @@
-//  NtfyClient.h
-
+// NTFY_CLIENT_H
 #ifndef NTFY_CLIENT_H
 #define NTFY_CLIENT_H
 
 #include <Arduino.h>
 #include <Stream.h>
 
-enum class NtfyPriority : int {
+enum class NtfyPriority {
     Min = 1,
     Low = 2,
     Default = 3,
@@ -18,46 +17,54 @@ struct NtfyMessage {
     const char* topic = nullptr;
     const char* message = nullptr;
     const char* title = nullptr;
-    NtfyPriority priority = NtfyPriority::Default;
     const char* tags = nullptr;
     const char* clickUrl = nullptr;
+    NtfyPriority priority = NtfyPriority::Default;
     bool updateDefaultTopic = false;
 };
 
 struct NtfyPollResult {
     bool success = false;
-    String rawPayload = "";
     int httpCode = 0;
+    String rawPayload = "";
 };
+
+// --- GLOBÁLIS VÁLTOZÓK ÉS FÜGGVÉNYEK A KONFIGURÁCIÓHOZ ---
+extern String gNtfyTopic;
+extern String gNtfyServer;
+extern String gNtfyNickname;
+
+void loadNtfyConfig();
+void saveNtfyConfig(const String& server, const String& topic, const String& nickname);
 
 class NtfyClient {
 public:
-    NtfyClient(Stream& modemStream, const char* defaultTopic = "", const char* server = "ntfy.sh");
-
+    NtfyClient(Stream& modemStream, const char* defaultTopic = "", const char* serverAddress = "ntfy.sh");
+    
     void setTopic(const char* topic);
-    void setDebugStream(Stream* dbg) { _dbgStream = dbg; }
-
-    bool send(const char* message, const char* title = "", NtfyPriority priority = NtfyPriority::Default);
-    bool sendToTopic(const char* topic, const char* message, bool retainTopic = false, const char* title = "", NtfyPriority priority = NtfyPriority::Default);
-    bool publish(const NtfyMessage& msg, uint32_t timeoutMs = 15000);
-
-    NtfyPollResult pollMessages(const char* since = "all", const char* topic = "", uint32_t timeoutMs = 15000);
-    NtfyPollResult pollRaw(const char* since = "all", const char* topic = "", uint32_t timeoutMs = 15000);
-
+    void setDebugStream(Stream* dbgStream) { _dbgStream = dbgStream; }
     int getLastHttpCode() const { return _lastHttpCode; }
+
+    bool send(const char* message, const char* title = nullptr, NtfyPriority priority = NtfyPriority::Default);
+    bool sendToTopic(const char* topic, const char* message, bool retainTopic = false, const char* title = nullptr, NtfyPriority priority = NtfyPriority::Default);
+    
+    bool publish(const NtfyMessage& msg, uint32_t timeoutMs = 35000);
+
+    NtfyPollResult pollMessages(const char* since = nullptr, const char* topic = nullptr, uint32_t timeoutMs = 15000);
+    NtfyPollResult pollRaw(const char* since = nullptr, const char* topic = nullptr, uint32_t timeoutMs = 15000);
 
 private:
     Stream& _modem;
-    Stream* _dbgStream = nullptr;
     String _defaultTopic;
     String _server;
-    int _lastHttpCode = 0;
+    int _lastHttpCode;
+    Stream* _dbgStream;
 
-    void logDebug(const String& str);
     void flushInput();
-    bool sendCommand(const String& cmd, const char* expectedResponse = "OK", uint32_t timeoutMs = 5000);
-    bool waitForPrompt(const String& cmd, uint32_t timeoutMs = 5000);
-    String readHttpResponseBody(uint32_t timeoutMs = 5000);
+    bool sendCommand(const String& cmd, const char* expectedResponse, uint32_t timeoutMs);
+    bool waitForPrompt(const String& cmd, uint32_t timeoutMs);
+    void logDebug(const String& str);
+    String readHttpResponseBody(uint32_t timeoutMs);
 };
 
-#endif // NTFY_CLIENT_H
+#endif 
