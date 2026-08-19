@@ -1015,7 +1015,7 @@ void handleGnss() {
   html += "<button class='sec'>Koordinata mentese</button></form>";
   html += "</div>";
 
-  html += "<div class='card diag-card wide'><h2>🛰 GNSS Live Debug</h2>";
+  html += "<div class='card diag-card wide'><h2>🛰️ GNSS Live Debug</h2>";
   html += "<div class='diag' id='gnssDebugBox' style='max-height:200px; overflow-y:auto; font-size:11px;'>Betöltés...</div>";
   html += "<script>";
   html += "function pollGnssDebug(){";
