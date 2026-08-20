@@ -13,8 +13,9 @@
 #include "web_config.h"
 #include "web_gnss.h"
 #include "web_gsm.h"
-#include "web_iot.h"
+#include "web_handlehive.h"
 #include "web_hives.h"
+#include "web_iot.h"
 #include "web_sensors.h"
 #include "web_diag.h"
 #include "web_theme.h"
@@ -25,14 +26,62 @@ extern DNSServer dnsServer;
 extern ModemState gModem;
 extern GnssState gGnss;
 extern TimeState gTime;
+extern void handleEvaluate();
 
 // Ha a handleCss a web_theme.cpp-ben van:
 extern void handleCss(); 
+
+extern void handleRegisterPart();
+extern void handleRegisterPartPost();
 
 void handleRoot() {
   if (!checkPinGuard()) return;
   String html = htmlHead("Áttekintés", "1");
 
+  // NFC Olvasó kártya
+  html += "<div class='card'><h2>Kaptár Azonosítás (NFC)</h2>";
+  html += "<button id='nfcBtn' class='sec' style='width:100%'>📱 NFC Címke Olvasása</button>";
+  html += "<div id='nfcResult' class='msg' style='display:none; margin-top:10px;'></div>";
+  html += "<script>"
+          "document.getElementById('nfcBtn').addEventListener('click', async () => {"
+          "  const res = document.getElementById('nfcResult');"
+          "  if (!window.isSecureContext) {"
+          "    res.style.display = 'block'; res.className = 'msg err';"
+          "    res.innerHTML = '<b>Biztonsági hiba!</b> A Web NFC-hez HTTPS vagy a Chrome flag beállítása szükséges.<br>' +"
+          "      '<input type=\"text\" id=\"flagInput\" value=\"chrome://flags/#unsafely-treat-insecure-origin-as-secure\" readonly style=\"width:100%; margin:8px 0; padding:6px; font-family:monospace; font-size:12px; background:rgba(0,0,0,0.2); border:1px solid var(--border); color:var(--txt);\">' +"
+          "      '<button class=\"sec\" style=\"width:100%;\" onclick=\"var copyText = document.getElementById(\\'flagInput\\'); copyText.select(); document.execCommand(\\'copy\\'); alert(\\'Vágólapra másolva!\\');\">📋 Másolás</button>';"
+          "    return;"
+          "  }"
+          "  if (!('NDEFReader' in window)) {"
+          "    res.style.display = 'block'; res.className = 'msg err';"
+          "    res.innerText = 'Ez a böngésző nem támogatja a Web NFC-t.';"
+          "    return;"
+          "  }"
+          "  try {"
+          "    const ndef = new NDEFReader();"
+          "    await ndef.scan();"
+          "    res.style.display = 'block'; res.className = 'msg warn';"
+          "    res.innerText = 'NFC aktív. Érintsd a telefont a kaptárhoz...';"
+          "    ndef.onreading = event => {"
+          "      const decoder = new TextDecoder();"
+          "      for (const record of event.message.records) {"
+          "        if (record.recordType === 'text') {"
+          "          const text = decoder.decode(record.data);"
+          "          res.className = 'msg ok';"
+          "          res.innerText = 'Kaptár azonosítva: ' + text + '. Átirányítás...';"
+          "          setTimeout(() => { location.href = '/evaluate?hive=' + encodeURIComponent(text); }, 600);"
+          "        }"
+          "      }"
+          "    };"
+          "  } catch (error) {"
+          "    res.style.display = 'block'; res.className = 'msg err';"
+          "    res.innerText = 'Hiba az olvasáskor: ' + error;"
+          "  }"
+          "});"
+          "</script>";
+  html += "</div>";
+
+  // Eredeti kártyák
   html += "<div class='card'><h2>Modem Állapot</h2>";
   html += stateRow("Modem kész", gModem.ready ? "Igen" : "Nem", gModem.ready ? "g" : "r");
   html += stateRow("Regisztrálva", gModem.registered ? "Igen" : "Nem", gModem.registered ? "g" : "r");
@@ -164,6 +213,12 @@ void webBegin() {
   server.on("/reinit",     HTTP_POST, handleReinit);
 
   server.on("/hives",      HTTP_GET,  handleHives);
+  server.on("/evaluate",   HTTP_GET,  handleEvaluate);
+  server.on("/evaluate_post", HTTP_POST, handleEvaluatePost);
+  server.on("/config_post", HTTP_POST, handleConfigPost);
+  server.on("/register_part", HTTP_GET, handleRegisterPart);
+  server.on("/register_part_post", HTTP_POST, handleRegisterPartPost);
+
   server.on("/test-report",HTTP_POST, handleTestReport);
   server.on("/netauto",    HTTP_POST, handleNetAuto);
   server.on("/netscan",    HTTP_POST, handleNetScan);
@@ -174,6 +229,9 @@ void webBegin() {
   server.on("/save-report",HTTP_POST, handleSaveReport);
 
   server.onNotFound(handleNotFound);
+  
+  server.on("/hive_view", HTTP_GET, handleHiveView);
+  server.on("/hive_view", HTTP_GET, handleHiveView);
 
   server.begin();
   Serial.println(F("[WEB] Webszerver elindult."));

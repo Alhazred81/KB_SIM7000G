@@ -5,6 +5,10 @@
 
 #include <Arduino.h>
 
+extern void handleConfig();
+extern void handleConfigPost();
+extern void handleEvaluate();
+extern void handleEvaluatePost();
 void handleHives();
 
 #endif

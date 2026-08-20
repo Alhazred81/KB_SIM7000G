@@ -1,0 +1,8 @@
+//hives_types.json
+[
+  { "name": "NB - 15-ös", "id": "nb_15" },
+  { "name": "NB - 1/2 fiók", "id": "nb_half" },
+  { "name": "Apidea (pároztató)", "id": "apidea" },
+  { "name": "Mini Plus (tenyész)", "id": "mini_plus" },
+  { "name": "Langstroth (1/1)", "id": "lang_full" }
+]
