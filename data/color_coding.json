@@ -1,0 +1,32 @@
+{
+  "hans": {
+    "label": "🔥 Hans",
+    "color": "#FF0000",
+    "bg": "rgba(255,0,0,0.5)",
+    "animate": true
+  },
+  "now": {
+    "label": "MOST",
+    "color": "#ff00ff",
+    "bg": "rgba(255,0,255,0.2)",
+    "animate": false
+  },
+  "tomorrow": {
+    "label": "Holnap",
+    "color": "#ff3333",
+    "bg": "rgba(255,0,0,0.2)",
+    "animate": false
+  },
+  "soon": {
+    "label": "3 napon belül",
+    "color": "#ffa500",
+    "bg": "rgba(255,165,0,0.2)",
+    "animate": false
+  },
+  "later": {
+    "label": "3 napon túl",
+    "color": "#e6e600",
+    "bg": "rgba(255,255,0,0.2)",
+    "animate": false
+  }
+}

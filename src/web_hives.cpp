@@ -7,7 +7,6 @@
 
 extern WebServer server;
 extern bool checkPinGuard();
-// diagAdd eltávolítva, mert a web_common.h már deklarálja!
 
 // --- Térképes / Főoldali kaptár nézet ---
 void handleHives() {
@@ -160,6 +159,8 @@ void handleEvaluate() {
   html += "<input type='number' step='0.5' name='yield' placeholder='pl. 1.5' style='width:100%; margin-bottom:15px;'>";
   html += "<label>Atkahullás (kontroll utáni db)</label>";
   html += "<input type='number' name='mites' placeholder='pl. 42' style='width:100%; margin-bottom:15px;'>";
+  html += "<label>Szirup etetés (liter)</label>";
+  html += "<input type='number' step='0.1' name='syrup' placeholder='pl. 2.5' style='width:100%; margin-bottom:15px;'>";
   html += "</div>";
 
   html += "<div class='card'>";
@@ -168,6 +169,8 @@ void handleEvaluate() {
   html += "<option value='termelo' selected>Termelő (Normál)</option>";
   html += "<option value='tenyesz'>Tenyész (Anya nevelésre)</option>";
   html += "<option value='dajka'>Dajka / Starter</option>";
+  html += "<option value='anyanevelesi_mesterterv'>Anyanevelési Mesterterv</option>";
+  html += "<option value='petes_anyanevelesi_mesterterv'>Petés Anyanevelési Mesterterv</option>";
   html += "<option value='teli_egyesites'>Téli egyesítés (Gyenge)</option>";
   html += "<option value='hans'>Hans 🔥 (Kuka/Leváltás)</option>";
   html += "</select>";
@@ -188,11 +191,11 @@ void handleEvaluate() {
 void handleEvaluatePost() {
   String hive = server.hasArg("hive") ? server.arg("hive") : "Ismeretlen";
   String gentle = server.hasArg("gentle") ? server.arg("gentle") : "0";
-  // JAVÍTVA: itt az arg értékét kérjük el, nem a hasArg-ot
   String status = server.hasArg("status") ? server.arg("status") : "termelo";
+  String syrup = server.hasArg("syrup") && server.arg("syrup") != "" ? server.arg("syrup") : "0";
   
-  String logMsg = "Értékelés mentve [" + hive + "] Status: " + status + ", Szelídség: " + gentle;
-  diagAdd(logMsg); // Most már nem ambigua
+  String logMsg = "Értékelés mentve [" + hive + "] Status: " + status + ", Szelídség: " + gentle + ", Szirup: " + syrup + " L";
+  diagAdd(logMsg);
 
   server.sendHeader("Location", "/");
   server.send(302);
@@ -258,7 +261,6 @@ String getHiveTypesHtml() {
   File file = LittleFS.open("/hives_types.json", "r");
   if (!file) return "<option value='none'>Hiba: Nincs típusfájl!</option>";
 
-  // JAVÍTVA ArduinoJson 7-hez: DynamicJsonDocument helyett JsonDocument
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, file);
   file.close();

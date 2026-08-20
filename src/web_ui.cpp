@@ -232,6 +232,8 @@ void webBegin() {
   
   server.on("/hive_view", HTTP_GET, handleHiveView);
   server.on("/hive_view", HTTP_GET, handleHiveView);
+  server.serveStatic("/hans.png", LittleFS, "/hans.png");
+  server.serveStatic("/donttouch.png", LittleFS, "/donttouch.png");
 
   server.begin();
   Serial.println(F("[WEB] Webszerver elindult."));
