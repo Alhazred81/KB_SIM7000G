@@ -14,6 +14,8 @@ static int diagCount = 0;
 extern WebServer server;
 extern String loadPin(); // Vagy ahonnan a loadPin jön
 
+void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds);
+
 bool checkPinGuard() {
   if (loadPin().length() == 0) {
     server.sendHeader("Location", "/cfg");
@@ -258,4 +260,40 @@ String compassAbbrev(float deg) {
   int idx = (int)((deg + 22.5f) / 45.0f) % 8;
   if(idx < 0) idx += 8;
   return String(dirs[idx]);
+}
+
+
+void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds) {
+  String html = htmlHead(title, "");
+  html += "<style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>";
+  html += "<div style='display:flex; justify-content:center; padding-top:40px;'>";
+  html += "<div class='card' style='text-align:center; padding:40px 20px; max-width:400px; width:100%;'>";
+  html += "<h2 style='font-size:18px; margin-bottom:15px;'>" + title + "</h2>";
+  html += "<div style='font-size:40px; margin:20px 0; display:inline-block; animation:spin 3s linear infinite;'>⚙️</div>";
+  html += "<p style='font-size:14px; color:var(--txt); margin-bottom:20px;'>" + message + "</p>";
+  html += "<div class='msg warn' id='countdown' style='font-size:14px; font-weight:bold;'>Hátravan max: " + String(waitSeconds) + " mp</div>";
+  html += "</div></div>";
+  html += "<script>";
+  
+  html += "var w = " + String(waitSeconds) + ";";
+  html += "var t = setInterval(function(){ "
+          "  w--; "
+          "  if(w > 0) document.getElementById('countdown').innerText = 'Hátravan max: ' + w + ' mp'; "
+          "  else location.href='" + nextUrl + "'; "
+          "}, 1000);";
+
+  html += "var p = setInterval(function(){"
+          "  fetch('/modemstatus').then(function(r){return r.json();}).then(function(d){"
+          "    if(d && d.inProgress === false) { "
+          "      clearInterval(t); clearInterval(p);"
+          "      document.getElementById('countdown').innerText = 'Kész! Átirányítás...';"
+          "      document.getElementById('countdown').className = 'msg ok';"
+          "      setTimeout(function(){ location.href='" + nextUrl + "'; }, 500);"
+          "    }"
+          "  }).catch(function(){});"
+          "}, 3000);";
+          
+  html += "</script>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
 }
