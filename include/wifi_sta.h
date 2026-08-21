@@ -3,9 +3,8 @@
 #include <WiFi.h>
 #include "config.h"
 #include "crypto.h"
-#include "time_mgr.h" // ntpStart miatt
+#include "time_mgr.h"
 
-// ─── Hálózati üzemmód ────────────────────────────────────────
 enum class NetMode { AP, STA_CONNECTING, STA_CONNECTED, STA_FAILED };
 
 struct WifiStaState {
@@ -20,10 +19,8 @@ struct WifiStaState {
 
 extern WifiStaState gSta;
 
-// Előre deklarált függvény a main.cpp-ből (AP indítás)
 void startAP();
 
-// ─── Elérhető hálózatok szkennelése ─────────────────────────
 struct ScannedNet {
   String ssid;
   int rssi;
@@ -36,19 +33,8 @@ extern int gScanCount;
 extern unsigned long gLastScan;
 
 void wifiScan();
-
-// ─── Csatlakozás indítása egy adott hálózatra ────────────────
 void wifiStaConnect(const String& ssid, const String& pass);
-
-// ─── STA állapot loop ────────────────────────────────────────
 void wifiStaLoop();
-
-// ─── Indulási auto-csatlakozás ───────────────────────────────
 void wifiStaTryAutoConnect();
-
-// ─── STA lecsatlakozás ───────────────────────────────────────
 void wifiStaDisconnect();
-
-// ─── Kapcsolat-vesztés figyelése ─────────────────────────────
-extern unsigned long gLastStaCheck;
 void wifiStaWatchdog();
