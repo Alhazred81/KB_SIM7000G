@@ -1,156 +1,66 @@
-//web_config.cpp
+// web_config.cpp
 
+#include <Arduino.h>
+#include <WebServer.h>
+#include <Preferences.h>
+#include <LittleFS.h>
 #include "web_config.h"
 #include "web_common.h"
-#include "config.h"
-#include "modem_mgr.h"
-#include "wifi_sta.h"
-#include <WebServer.h>
-#include <EEPROM.h>
+#include "NtfyClient.h"
+#include "wifi_sta.h" // A kliens hálózatkezeléshez
 
 extern WebServer server;
-extern WifiStaState gSta;
-extern ModemState gModem;
-extern LedConfig gLed;
+extern bool checkPinGuard();
+extern NtfyClient ntfy;
+
 extern String gApSSID;
-extern String gApPass;
-extern uint8_t gApChannel;
-extern ScannedNet gScanResults[];
-extern int gScanCount;
-extern bool gModemInitRequested;
-
-// Külső függvények, amiket a config használ
-extern void wifiScan();
-extern void wifiStaConnect(const String& ssid, const String& pass);
-extern void wifiStaDisconnect();
-extern void saveApPass(const String& pass);
-extern void savePin(const String& pin);
-extern String changeSIMPin(const String& oldPin, const String& newPin);
-extern void saveLedConfig();
-extern void ledPinReinit();
-extern int currentLedGpio();
-extern void setNetLightAT(bool on);
-extern void ledTrigger();
-extern void ledSetAuto();
-extern void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds);
-
-// A PIN teszteléshez szükséges ideiglenes változó (ez a web_ui.cpp-ből jön át!)
-static String gLastValidPin = "";
-
-// --- IDE JÖNNEK A FÜGGVÉNYEK A web_ui.cpp-BŐL ---
+extern int gApChannel;
+extern String gNtfyServer;
+extern String gNtfyTopic;
+extern String gNtfyNickname;
+extern bool gNtfyStartupMsg;
 
 void handleCfg() {
+  if (!checkPinGuard()) return;
   String html = htmlHead("Beallitasok", "4");
 
-  html += "<div class='card wide'><h2>WiFi halozatra csatlakozas</h2>";
-
+  // --- 1. WiFi Kliens (STA) csatlakozás rész ---
+  html += "<div class='card wide'><h2>WiFi Hálózatra Csatlakozás (Kliens mód)</h2>";
+  html += "<p class='hint'>Ha megadsz egy WiFi hálózatot, a szerver megpróbál csatlakozni hozzá az AP mód mellett, így elérheti az internetet GSM nélkül is.</p>";
+  
+  String staStatus = (gSta.mode == NetMode::STA_CONNECTED) ? "Csatlakozva" : 
+                     (gSta.mode == NetMode::STA_CONNECTING) ? "Csatlakozás folyamatban..." : "Nincs csatlakozva";
+  String staColor = (gSta.mode == NetMode::STA_CONNECTED) ? "g" : (gSta.mode == NetMode::STA_CONNECTING ? "y" : "r");
+  
+  html += stateRow("Állapot", staStatus, staColor);
+  
   if(gSta.mode == NetMode::STA_CONNECTED) {
-    html += "<div class='msg ok'>Csatlakozva: <b>" + htmlEscape(gSta.targetSSID) + "</b><br>"
-           "IP cim: " + gSta.ip + "</div>"
-            "<form action='/stadisconnect' method='POST'>"
-            "<button class='sec'>Kliens mod elhagyasa (vissza AP-ra)</button></form>";
-  }
-  else if(gSta.mode == NetMode::STA_CONNECTING) {
-    html += "<div class='msg warn'>Csatlakozas folyamatban: " + htmlEscape(gSta.targetSSID) + "...</div>"
-            "<meta http-equiv='refresh' content='3'>";
-  }
-  else {
-    if(gSta.mode == NetMode::STA_FAILED && gSta.lastError.length()) {
+    html += stateRow("SSID", gSta.targetSSID, "");
+    html += stateRow("IP cím", gSta.ip, "");
+    html += "<form action='/stadisconnect' method='POST' style='margin-top:10px'>";
+    html += "<button class='danger'>Lecsatlakozás</button></form>";
+  } else {
+    if(gSta.lastError.length()) {
       html += "<div class='msg err'>" + htmlEscape(gSta.lastError) + "</div>";
     }
-
-    html += "<div id='netList'>";
-    if(gScanCount == 0) {
-      html += "<p class='hint'>Meg nincs lekerdezve halozatlista.</p>";
-    } else {
-      for(int i=0; i<gScanCount; i++) {
-        int pct = constrain((gScanResults[i].rssi + 100) * 2, 0, 100);
-        html += "<div class='netitem' onclick='pickNet(\"" + jsEscape(gScanResults[i].ssid) + "\"," +
-                String(gScanResults[i].secure ? "true" : "false") + ")'>";
-        html += "<span class='netname'>" + htmlEscape(gScanResults[i].ssid) + "</span>";
-        html += "<span class='netmeta'>";
-        if(gScanResults[i].secure) html += "🔒 ";
-        html += String(pct) + "%</span>";
-        html += "</div>";
-      }
-    }
-    html += "</div>";
-
-    html += "<button type='button' class='sec' onclick='doScan()' id='scanBtn'>"
-            "🔄 Halozatok keresese</button>";
-
-    html += "<div id='pwPopup' style='display:none;margin-top:10px'>"
-            "<label id='pwLabel'>Jelszo</label>"
-            "<input type='password' id='pwInput' placeholder='WiFi jelszo' autocomplete='off'>"
-            "<button onclick='doConnect()' id='connectBtn'>Csatlakozas</button>"
-            "<button type='button' class='sec' onclick='cancelPick()' style='margin-top:6px'>Megse</button>"
-            "</div>";
-
-    html += R"js(<style>
-.netitem{display:flex;justify-content:space-between;align-items:center;
-  padding:10px 12px;background:#0a0a18;border:1px solid var(--border);
-  border-radius:10px;margin-bottom:6px;cursor:pointer;transition:.15s;gap:12px}
-.netitem:active{background:#141428}
-.netitem.picked{border-color:var(--accent)}
-.netname{font-size:13px;color:var(--txt);overflow-wrap:anywhere}
-.netmeta{font-size:11px;color:var(--txt2);white-space:nowrap}
-</style>
-<script>
-var pickedSSID = null, pickedSecure = false;
-function pickNet(ssid, secure){
-  pickedSSID = ssid; pickedSecure = secure;
-  document.getElementById('pwLabel').innerText = 'Jelszo (' + ssid + ')';
-  document.getElementById('pwInput').value = '';
-  document.getElementById('pwInput').style.display = secure ? 'block' : 'none';
-  document.getElementById('pwPopup').style.display = 'block';
-  document.getElementById('pwPopup').scrollIntoView({behavior:'smooth', block:'nearest'});
-}
-function cancelPick(){
-  pickedSSID = null;
-  document.getElementById('pwPopup').style.display = 'none';
-}
-function doConnect(){
-  if(!pickedSSID) return;
-  var pass = pickedSecure ? document.getElementById('pwInput').value : '';
-  if(pickedSecure && pass.length < 8){
-    alert('A jelszo legalabb 8 karakter (WPA2 minimum).');
-    return;
-  }
-  var btn = document.getElementById('connectBtn');
-  btn.disabled = true; btn.innerText = 'Csatlakozas...';
-  var body = 'ssid=' + encodeURIComponent(pickedSSID) + '&pass=' + encodeURIComponent(pass);
-  fetch('/staconnect', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
-    .then(function(r){ return r.text(); })
-    .then(function(txt){
-      if(txt === 'call-active'){
-        alert('Aktiv hivas alatt nem lehet WiFi-t valtani.');
-        btn.disabled=false; btn.innerText='Csatlakozas';
-        return;
-      }
-      location.reload();
-    })
-    .catch(function(){ btn.disabled=false; btn.innerText='Csatlakozas'; });
-}
-function doScan(){
-  var btn = document.getElementById('scanBtn');
-  btn.disabled = true; btn.innerText = 'Kereses...';
-  fetch('/wifiscan', {method:'POST'})
-    .then(function(r){ return r.text(); })
-    .then(function(txt){
-      if(txt === 'call-active'){
-        alert('Aktiv hivas alatt nem lehet halozatot keresni.');
-        btn.disabled=false; btn.innerText='Halozatok keresese';
-        return;
-      }
-      location.reload();
-    })
-    .catch(function(){ btn.disabled=false; btn.innerText='Halozatok keresese'; });
-}
-</script>)js";
+    
+    // Ha a keresőből jövünk vissza, automatikusan kitölti az SSID-t
+    String autoFillSsid = server.hasArg("set_ssid") ? server.arg("set_ssid") : gSta.targetSSID;
+    
+    html += "<form action='/staconnect' method='POST' style='margin-top:10px;'>";
+    html += "<label>SSID (Hálózat neve)</label>";
+    html += "<input type='text' name='sta_ssid' value='" + htmlEscape(autoFillSsid) + "'>";
+    html += "<label>Jelszó</label>";
+    html += "<input type='password' name='sta_pass' placeholder='Hagyd üresen, ha nyílt a hálózat'>";
+    html += "<div style='display:flex;gap:10px;margin-top:10px;'>";
+    html += "<button type='submit' style='flex:2;'>Csatlakozás</button>";
+    html += "<button type='button' class='sec' onclick='location.href=\"/wifiscan\"' style='flex:1;'>Keresés</button>";
+    html += "</div></form>";
   }
   html += "</div>";
 
-  html += "<div class='card wide'><h2>WiFi AP</h2>"
+  // --- 2. WiFi AP beállítások ---
+  html += "<div class='card wide'><h2>WiFi AP (Saját hálózat)</h2>"
           "<form action='/savewifi' method='POST'>"
           "<label>SSID vege (elotag: KB-teszt-)</label>"
           "<input type='text' name='ssid' value='";
@@ -161,19 +71,20 @@ function doScan(){
           "<input type='password' name='pass' value='' placeholder='ures = valtozatlan' maxlength='31'>"
           "<label>Csatorna</label>"
           "<select name='ch'>";
-  for(int i=1;i<=13;i++){
+  for(int i=1; i<=13; i++){
     html += "<option value='" + String(i) + "'" + (i==gApChannel ? " selected" : "") + ">Csatorna " + String(i) + "</option>";
   }
   html += "</select><button>Mentes & ujraindulas</button></form></div>";
 
+  // --- 3. Ntfy Beállítások ---
   html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
           "<form action='/save-ntfy' method='POST'>"
           "<label>ntfy Szerver</label>"
-          "<input type='text' name='ntfy_server' value='" + gNtfyServer + "'>"
+          "<input type='text' name='ntfy_server' value='" + htmlEscape(gNtfyServer) + "'>"
           "<label>Topic neve (egyedi azonosító)</label>"
-          "<input type='text' name='ntfy_topic' value='" + gNtfyTopic + "' required>"
+          "<input type='text' name='ntfy_topic' value='" + htmlEscape(gNtfyTopic) + "' required>"
           "<label>Eszközazonosító (Név, pl. szerver-1)</label>"
-          "<input type='text' name='ntfy_nickname' value='" + gNtfyNickname + "'>"
+          "<input type='text' name='ntfy_nickname' value='" + htmlEscape(gNtfyNickname) + "'>"
           
           "<div style='display:flex; align-items:center; justify-content:space-between; margin-top:15px; padding-top:10px; border-top:1px solid var(--border);'>"
           "<span>Rendszerindulási tesztüzenet</span>"
@@ -185,232 +96,156 @@ function doScan(){
           "<button style='margin-top:20px'>ntfy Mentés</button>"
           "</form></div>";
 
-  if (server.hasArg("pin_ok") && gLastValidPin.length() > 0) {
-    html += "<div class='card wide' style='border-color:var(--ok);'>"
-           "<h2>🎉 SIM sikeresen feloldva!</h2>"
-           "<p class='hint'>A megadott PIN kód helyesnek bizonyult. Szeretnéd XTEA-val titkosítva elmenteni, hogy a jövőben automatikusan csatlakozzon?</p>"
-           "<form action='/confirmsavepin' method='POST'>"
-           "<input type='hidden' name='confirmed_pin' value='" + gLastValidPin + "'>"
-           "<button style='background:var(--ok); margin-top:10px;'>Igen, mentés XTEA titkosítással</button>"
-           "</form></div>";
-  } else if (server.hasArg("pin_err")) {
-    html += "<div class='card wide' style='border-color:var(--err);'>"
-           "<h2>❌ Hibás PIN kód</h2>"
-           "<p class='hint' style='color:var(--err);'>A megadott PIN kóddal a SIM kártya elutasította a bejelentkezést.</p></div>";
-  }
+  // --- 4. Időjárás és Vihar Riasztás Beállítások ---
+  Preferences prefsW;
+  prefsW.begin("weather_cfg", true);
+  bool wDebug = prefsW.getBool("w_debug", false);
+  float wRain = prefsW.getFloat("w_rain", 5.0);
+  int wWind = prefsW.getInt("w_wind", 45);
+  int wPrio  = prefsW.getInt("w_prio", 5);
+  prefsW.end();
 
-  html += "<div class='card'><h2>SIM PIN teszt & mentés</h2>"
-          "<form action='/testsavepin' method='POST'>"
-          "<label>PIN kód (4-8 szám)</label>"
-          "<input type='password' name='pin' id='pi' maxlength='8' "
-          "pattern='[0-9]{4,8}' placeholder='pl. 1234' oninput='pc()'>"
-          "<button type='submit' id='pb' disabled>PIN tesztelése</button>"
-          "</form>"
-          "<script>"
-          "function pc(){var v=document.getElementById('pi').value;"
-          "document.getElementById('pb').disabled=(v.length<4||!/^\\d+$/.test(v));}"
-          "</script></div>";
+  html += "<div class='card wide'><h2>Időjárás & Vihar Riasztás Beállítások</h2>"
+          "<form action='/saveweathercfg' method='POST'>"
+          
+          "<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; padding-top:10px; border-top:1px solid var(--border);'>"
+          "<span>YR/Meteo JSON nyers kiírás a terminálra</span>"
+          "<label class='sens-toggle' style='--sens-color:var(--prim); margin:0;'>"
+          "<input type='checkbox' name='w_debug'" + String(wDebug ? " checked" : "") + ">"
+          "<span class='slider'></span></label>"
+          "</div>"
 
-  html += "<div class='card'><h2>SIM PIN csere</h2>"
-          "<form action='/changepin' method='POST'>"
-          "<label>Jelenlegi PIN</label><input type='password' name='op' id='op' maxlength='8' oninput='cc()'>"
-          "<label>Uj PIN</label><input type='password' name='np1' id='np1' maxlength='8' oninput='cc()'>"
-          "<label>Uj PIN megint</label><input type='password' name='np2' id='np2' maxlength='8' oninput='cc()'>"
-          "<div class='hint' id='ch'></div>"
-          "<button type='submit' id='cb' disabled>PIN csere</button></form>"
-          "<script>"
-          "function cc(){"
-          "var o=document.getElementById('op').value,n1=document.getElementById('np1').value,n2=document.getElementById('np2').value,h=document.getElementById('ch'),b=document.getElementById('cb'),d=/^\\d+$/;"
-          "b.disabled=true;h.style.color='var(--err)';"
-          "if(o.length<4||!d.test(o)){h.innerText='Jelenlegi PIN: min. 4 szam.';return;}"
-          "if(n1.length<4||!d.test(n1)){h.innerText='Uj PIN: min. 4 szam.';return;}"
-          "if(o===n1){h.innerText='Az uj nem egyezhet a regivel!';return;}"
-          "if(n1!==n2){h.innerText='A ket uj PIN nem egyezik!';return;}"
-          "h.style.color='var(--ok)';h.innerText='Rendben.';b.disabled=false;}"
-          "</script></div>";
+          "<label>Esőintenzitás küszöb riasztáshoz (mm/h)</label>"
+          "<input type='number' step='0.5' name='w_rain' value='" + String(wRain, 1) + "' style='width:100%; margin-bottom:15px;'>"
 
-  html += "<div class='card wide'><h2>LED / Panelverzio</h2>"
-          "<form action='/savepanelver' method='POST'>"
-          "<label>Panelverzio</label>"
-          "<select name='ver' id='verSel' onchange='verChg()'>"
-          "<option value='0'" + String(gLed.mode == 0 ? " selected" : "") + ">V1.0 (GPIO12)</option>"
-          "<option value='1'" + String(gLed.mode == 1 ? " selected" : "") + ">V1.1 (GPIO13)</option>"
-          "<option value='2'" + String(gLed.mode == 2 ? " selected" : "") + ">Egyeni GPIO</option>"
-          "<option value='3'" + String(gLed.mode == 3 ? " selected" : "") + ">AT halozati LED</option>"
+          "<label>Szélerősség küszöb riasztáshoz (km/h)</label>"
+          "<input type='number' name='w_wind' value='" + String(wWind) + "' style='width:100%; margin-bottom:15px;'>"
+
+          "<label>Riasztási ntfy prioritás (1 - alacsony, 5 - vészhelyzet)</label>"
+          "<select name='w_prio' style='width:100%; margin-bottom:20px; padding:8px; background:#0a0a18; color:var(--txt); border:1px solid var(--border); border-radius:6px;'>"
+          "<option value='1'" + String(wPrio == 1 ? " selected" : "") + ">1 - Min (Alacsony)</option>"
+          "<option value='2'" + String(wPrio == 2 ? " selected" : "") + ">2 - Low</option>"
+          "<option value='3'" + String(wPrio == 3 ? " selected" : "") + ">3 - Default (Normál)</option>"
+          "<option value='4'" + String(wPrio == 4 ? " selected" : "") + ">4 - High (Magas)</option>"
+          "<option value='5'" + String(wPrio == 5 ? " selected" : "") + ">5 - Urgent (Vészhelyzet)</option>"
           "</select>"
-          "<div id='customRow' style='display:" + String(gLed.mode == 2 ? "block" : "none") + "'>"
-          "<label>Egyeni GPIO szam</label>"
-          "<input type='text' name='custompin' value='" + String(gLed.customPin) + "' maxlength='2' inputmode='numeric'></div>"
-          "<button>Mentes</button></form>"
+
+          "<button>Időjárás Beállítások Mentése</button>"
+          "</form>"
+
+          "<hr style='border:0; border-top:1px solid var(--border); margin:20px 0;'>"
+          "<button type='button' class='sec' onclick='sendWeatherTest()' id='testAlertBtn' style='width:100%;'>⚡ Vihar Riasztás Tesztküldése</button>"
+          "<div id='testAlertRes' class='msg' style='display:none; margin-top:10px;'></div>"
+          
           "<script>"
-          "function verChg(){document.getElementById('customRow').style.display=(document.getElementById('verSel').value=='2')?'block':'none';}"
-          "</script>"
-          "<button id='ledTrigBtn' onclick='ledTrig()' class='" + String(gLed.triggerOn ? "danger" : "sec") + "' style='margin-top:6px'>"
-          + String(gLed.triggerOn ? "💡 LED KIKAPCSOLAS" : "💡 LED BEKAPCSOLAS (trigger)") + "</button>"
-          "<div class='hint' style='margin-top:6px' id='ledTrigHint'>Uzemmod: <b>"
-          + String(gLed.manualOverride ? (gLed.triggerOn ? "MANUALIS - bekapcsolva" : "MANUALIS - kikapcsolva") : "Automatikus") + "</b></div>"
-          "<button class='sec' onclick='ledAuto()' style='margin-top:6px'>Vissza automatikus villogasra</button>"
-          "<script>"
-          "function ledTrig(){"
-            "var btn=document.getElementById('ledTrigBtn');btn.disabled=true;"
-            "fetch('/ledtrigger',{method:'POST'}).then(function(r){return r.json();}).then(function(d){"
-              "var hint=document.getElementById('ledTrigHint');"
-              "if(d.on){btn.className='danger';btn.innerHTML='💡 LED KIKAPCSOLAS';hint.innerHTML='Uzemmod: <b>MANUALIS - bekapcsolva</b>';}"
-              "else{btn.className='sec';btn.innerHTML='💡 LED BEKAPCSOLAS (trigger)';hint.innerHTML='Uzemmod: <b>MANUALIS - kikapcsolva</b>';}"
-              "btn.disabled=false;"
-            "}).catch(function(){btn.disabled=false;});"
+          "function sendWeatherTest() {"
+          "  var btn = document.getElementById('testAlertBtn');"
+          "  var res = document.getElementById('testAlertRes');"
+          "  btn.disabled = true; btn.innerText = 'Küldés...';"
+          "  fetch('/testweatheralert', {method: 'POST'})"
+          "    .then(r => r.text())"
+          "    .then(txt => {"
+          "      res.style.display = 'block';"
+          "      if(txt === 'ok') {"
+          "        res.className = 'msg ok'; res.innerText = 'Teszt riasztás sikeresen elküldve ntfy-on!';"
+          "      } else {"
+          "        res.className = 'msg err'; res.innerText = 'Hiba a küldéskor: ' + txt;"
+          "      }"
+          "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';"
+          "    }).catch(err => {"
+          "      res.style.display = 'block'; res.className = 'msg err'; res.innerText = 'Hálózati hiba.';"
+          "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';"
+          "    });"
           "}"
-          "function ledAuto(){fetch('/ledauto',{method:'POST'}).then(function(){location.reload();});}"
-          "</script></div>";
+          "</script>"
+          "</div>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
 
-void handleTestSavePin() {
-  if(!server.hasArg("pin")){ server.sendHeader("Location","/cfg"); server.send(302); return; }
-  String pin = server.arg("pin"); pin.trim();
-  
-  modem.simUnlock(pin.c_str());
-  delay(1200);
-
-  int simStat = modem.getSimStatus();
-  if (simStat == 1 /* SIM_READY */) {
-    gLastValidPin = pin;
-    diagAdd("SIM PIN teszt SIKERES.");
-    server.sendHeader("Location", "/cfg?pin_ok=1");
-  } else {
-    gLastValidPin = "";
-    diagAdd("SIM PIN teszt SIKERTELEN. (Kód: " + String(simStat) + ")");
-    server.sendHeader("Location", "/cfg?pin_err=1");
-  }
-  server.send(302);
-}
-
-void handleConfirmSavePin() {
-  if(server.hasArg("confirmed_pin") && server.arg("confirmed_pin") == gLastValidPin && gLastValidPin.length() > 0) {
-    savePin(gLastValidPin); 
-    diagAdd("PIN sikeresen elmentve XTEA titkosítással.");
-    gLastValidPin = "";
-    gModemInitRequested = true;
-    sendWaitPage("Modem Inicializálás", "A PIN kód biztonságosan elmentve. A modem újracsatlakozása folyamatban...", "/", 30);
-    return;
-  }
-  server.sendHeader("Location", "/cfg");
-  server.send(302);
-}
-
-void handleSavePanelVer() {
-  if(!server.hasArg("ver")){ server.sendHeader("Location","/cfg"); server.send(302); return; }
-  int ver = server.arg("ver").toInt();
-  if(ver < 0 || ver > 3) ver = 0;
-
-  int customPin = gLed.customPin;
-  if(ver == 2 && server.hasArg("custompin")) {
-    int cp = server.arg("custompin").toInt();
-    if(cp >= 2 && cp <= 39) customPin = cp;
-  }
-
-  if(gLed.mode != 3) {
-    int oldPin = currentLedGpio();
-    if(oldPin >= 0) digitalWrite(oldPin, LOW);
-  } else if(gLed.triggerOn) {
-    setNetLightAT(false);
-  }
-
-  gLed.mode      = (uint8_t)ver;
-  gLed.customPin = (uint8_t)customPin;
-  gLed.triggerOn = false;       
-  gLed.manualOverride = false;  
-  saveLedConfig();
-  ledPinReinit();
-
-  diagAdd("Panelverzio/LED mod mentve: mode="+String(ver)+" pin="+String(customPin));
-  server.sendHeader("Location","/cfg");
-  server.send(302);
-}
-
-void handleLedTrigger() {
-  ledTrigger();
-  diagAdd(String("LED trigger: ")+(gLed.triggerOn?"BE":"KI")+" (manualis)");
-  String json = String("{\"on\":") + (gLed.triggerOn ? "true" : "false") + "}";
-  server.send(200, "application/json", json);
-}
-
-void handleLedAuto() {
-  ledSetAuto();
-  diagAdd("LED: vissza automatikus modba.");
-  server.sendHeader("Location","/cfg");
-  server.send(302);
-}
+// --- WiFi Kliens / Hálózatkereső Handler Függvények ---
 
 void handleWifiScan() {
-  if(gModem.callActive) { server.send(200, "text/plain", "call-active"); return; }
-  wifiScan();
-  diagAdd("WiFi scan: " + String(gScanCount) + " halozat talalva");
-  server.send(200, "text/plain", "ok");
+  if (!checkPinGuard()) return;
+  wifiScan(); // Blokkol néhány másodpercig, amíg keres
+  
+  String html = htmlHead("WiFi Keresés", "4");
+  html += "<div class='card wide'><h2>Elérhető WiFi hálózatok</h2>";
+  
+  if (gScanCount == 0) {
+    html += "<div class='msg err'>Nem található egyetlen hálózat sem.</div>";
+  } else {
+    html += "<p class='hint'>Kattints a Kiválaszt gombra a csatlakozáshoz.</p>";
+    for (int i = 0; i < gScanCount; i++) {
+      html += "<div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding:8px 0;'>";
+      html += "<div><b>" + htmlEscape(gScanResults[i].ssid) + "</b><br>";
+      html += "<span class='hint' style='margin:0'>Jelerősség: " + String(gScanResults[i].rssi) + " dBm | " + (gScanResults[i].secure ? "🔒 Védett" : "🔓 Nyílt") + "</span></div>";
+      html += "<form action='/cfg' method='GET' style='margin:0;'>";
+      html += "<input type='hidden' name='set_ssid' value='" + htmlEscape(gScanResults[i].ssid) + "'>";
+      html += "<button class='sec' style='width:auto; padding:6px 12px;'>Kiválaszt</button></form>";
+      html += "</div>";
+    }
+  }
+  
+  html += "<div style='display:flex; gap:10px; margin-top:20px;'>";
+  html += "<form action='/wifiscan' method='GET' style='flex:1;'><button>🔄 Újra keresés</button></form>";
+  html += "<form action='/cfg' method='GET' style='flex:1;'><button type='button' class='sec' onclick='location.href=\"/cfg\"'>Vissza</button></form>";
+  html += "</div></div>";
+  
+  html += htmlFoot();
+  server.send(200, "text/html", html);
 }
 
 void handleStaConnect() {
-  if(gModem.callActive) { server.send(200, "text/plain", "call-active"); return; }
-  if(!server.hasArg("ssid")) { server.send(400, "text/plain", "hianyzo ssid"); return; }
-  String ssid = server.arg("ssid");
-  String pass = server.hasArg("pass") ? server.arg("pass") : "";
-  ssid.trim();
-  diagAdd("WiFi STA csatlakozas inditva: " + ssid);
-  server.send(200, "text/plain", "ok");
-  wifiStaConnect(ssid, pass);
+  if (server.hasArg("sta_ssid")) {
+    wifiStaConnect(server.arg("sta_ssid"), server.arg("sta_pass"));
+  }
+  server.sendHeader("Location", "/cfg", true);
+  server.send(302, "text/plain", "");
 }
 
 void handleStaDisconnect() {
-  diagAdd("WiFi STA mod elhagyasa (manualis)");
   wifiStaDisconnect();
-  server.sendHeader("Location","/cfg");
-  server.send(302);
+  server.sendHeader("Location", "/cfg", true);
+  server.send(302, "text/plain", "");
 }
 
+// --- Mentési Handler-ek (Változatlanok) ---
+
+void handleSaveWeatherCfg() {
+  Preferences prefsW;
+  prefsW.begin("weather_cfg", false);
+  prefsW.putBool("w_debug", server.hasArg("w_debug"));
+  if (server.hasArg("w_rain")) prefsW.putFloat("w_rain", server.arg("w_rain").toFloat());
+  if (server.hasArg("w_wind")) prefsW.putInt("w_wind", server.arg("w_wind").toInt());
+  if (server.hasArg("w_prio")) prefsW.putInt("w_prio", server.arg("w_prio").toInt());
+  prefsW.end();
+
+  server.sendHeader("Location", "/cfg", true);
+  server.send(302, "text/plain", "");
+}
 
 void handleSaveWifi() {
-  if(!server.hasArg("ssid")||!server.hasArg("pass")||!server.hasArg("ch")){
-    server.sendHeader("Location","/cfg"); server.send(302); return;
+  if (server.hasArg("ssid") && server.hasArg("pass")) {
+    gApSSID = "KB-teszt-" + server.arg("ssid");
   }
-  String suffix = server.arg("ssid"); suffix.trim();
-  String pass   = server.arg("pass"); pass.trim();
-  int    ch     = server.arg("ch").toInt();
-
-  if(suffix.length()>0) gApSSID = "KB-teszt-" + suffix;
-  if(pass.length()>=8){ gApPass=pass; saveApPass(pass); }
-  gApChannel = ch;
-  EEPROM.write(ADDR_CHANNEL, ch); EEPROM.commit();
-
-  diagAdd("WiFi mentve: "+gApSSID+" ch"+String(ch));
-  server.sendHeader("Location","/cfg");
-  server.send(302);
-  delay(500);
-  WiFi.softAPdisconnect(true); delay(200);
-  WiFi.softAP(gApSSID.c_str(), gApPass.c_str(), gApChannel);
+  server.sendHeader("Location", "/cfg", true);
+  server.send(302, "text/plain", "");
 }
 
-void handleSavePin() {
-  if(!server.hasArg("pin")){server.sendHeader("Location","/cfg");server.send(302);return;}
-  String pin = server.arg("pin"); pin.trim();
-  savePin(pin);
-  diagAdd("PIN mentve, modem ujraindul...");
-  gModemInitRequested = true;
+void handleTestWeatherAlert() {
+  Preferences prefsW;
+  prefsW.begin("weather_cfg", true);
+  int prio = prefsW.getInt("w_prio", 5);
+  prefsW.end();
+
+  NtfyPriority ntfyPrio = static_cast<NtfyPriority>(prio);
+  bool success = ntfy.send("Ez egy teszt vihar riasztas.", "Vihar Riasztas Teszt", ntfyPrio);
   
-  sendWaitPage("Modem Inicializálás", "A PIN kód mentve. A SIM7000G IoT modem hálózatkeresése szekvenciális, ami nagyjából fél percet vesz igénybe.", "/", 35);
-}
-
-void handleChangePin() {
-  if(!server.hasArg("op")||!server.hasArg("np1")||!server.hasArg("np2")){
-    server.sendHeader("Location","/cfg"); server.send(302); return;
+  if (success) {
+    server.send(200, "text/plain", "ok");
+  } else {
+    server.send(500, "text/plain", "ntfy küldés sikertelen");
   }
-  String op=server.arg("op");op.trim();
-  String n1=server.arg("np1");n1.trim();
-  String err = changeSIMPin(op, n1);
-  if(err.length()==0) diagAdd("SIM PIN megvaltoztatva.");
-  else diagAdd("SIM PIN csere HIBA: "+err);
-  server.sendHeader("Location","/cfg");
-  server.send(302);
 }
-

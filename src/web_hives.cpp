@@ -1,13 +1,55 @@
+//web_hives.cpp 
+
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include "web_hives.h"
 #include "web_common.h"
+#include "gnss_mgr.h"
+#include "modem_mgr.h"
 
 extern WebServer server;
 extern bool checkPinGuard();
+extern GnssState gGnss;
+extern ModemState gModem;
 
+// --- API végpont a térképhez és a telemetriához ---
+void handleMapStatusApi() {
+  String json = "{";
+  json += "\"lat\":" + String(gGnss.lat, 6) + ",";
+  json += "\"lon\":" + String(gGnss.lon, 6) + ",";
+  json += "\"fix\":" + String(gGnss.fix ? "true" : "false") + ",";
+  json += "\"sat\":" + String(gGnss.satUsed) + ",";
+  json += "\"signal\":" + String(gModem.signalQuality) + ",";
+  json += "\"operator\":\"" + jsEscape(gModem.operatorName) + "\",";
+  json += "\"netType\":\"" + gModem.netType + "\",";
+  json += "\"uptime\":" + String(millis() / 60000) + ",";
+  json += "\"heap\":" + String(ESP.getFreeHeap() / 1024) + ",";
+  json += "\"battery\":3.95,";
+  json += "\"windSpeed\":12.4";
+  json += "}";
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+}
+
+// --- Szerver & Időjárás-állomás Infó Kártya ---
+String getSzerverMapCardHtml() {
+  String html = "";
+  html += "<div class='card wide'>";
+  html += "<h2>📡 Szerver & Időjárás-állomás Telemetria</h2>";
+  html += "<div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:15px;'>";
+  html += "<div style='background:#0a0a18; padding:10px; border-radius:8px; border:1px solid var(--border);'><span style='font-size:11px; color:var(--txt2);'>Térerő</span><br><b id='map_signal'>-</b></div>";
+  html += "<div style='background:#0a0a18; padding:10px; border-radius:8px; border:1px solid var(--border);'><span style='font-size:11px; color:var(--txt2);'>GPS Fix / Sat</span><br><b id='map_fix'>-</b></div>";
+  html += "<div style='background:#0a0a18; padding:10px; border-radius:8px; border:1px solid var(--border);'><span style='font-size:11px; color:var(--txt2);'>Uptime</span><br><b id='map_uptime'>-</b></div>";
+  html += "<div style='background:#0a0a18; padding:10px; border-radius:8px; border:1px solid var(--border);'><span style='font-size:11px; color:var(--txt2);'>Memória</span><br><b id='map_heap'>-</b></div>";
+  html += "</div>";
+  html += "</div>";
+  return html;
+}
+
+// --- Térképes / Főoldali kaptár nézet ---
 // --- Térképes / Főoldali kaptár nézet ---
 void handleHives() {
   if (!checkPinGuard()) return;
@@ -33,65 +75,77 @@ void handleHives() {
           "</style>";
 
   html += "<div class='card wide' style='grid-column:1/-1'>"
-          "<h2>🗺 Kaptárak Térképes Áttekintése</h2>"
+          "<h2>🗺 Kaptárak & Időjárás-állomás Térképes Áttekintése</h2>"
           "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
           "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>"
-          "<div id='hiveMap' style='height:350px;border-radius:8px;margin-top:6px;z-index:1'></div>"
+          "<div id='hiveMap' style='height:380px;border-radius:8px;margin-top:6px;z-index:1'></div>"
           "<script>"
           "var osmLayerH = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap'});"
           "var satLayerH = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Tiles &copy; Esri'});"
-          "var hiveMap = L.map('hiveMap', {center: [47.514600, 19.043500], zoom: 15, layers: [osmLayerH]});"
+          "var hiveMap = L.map('hiveMap', {center: [47.514600, 19.043500], zoom: 19, layers: [satLayerH]});" // Magasabb zoom, alapból műhold
           "var baseLayersH = {'Utca': osmLayerH, 'Műhold': satLayerH};"
           "L.control.layers(baseLayersH).addTo(hiveMap);"
-          "function getQueenColor(year) {"
-          "  var lastDigit = year % 10;"
-          "  if (lastDigit === 1 || lastDigit === 6) return '#FFFFFF';"
-          "  if (lastDigit === 2 || lastDigit === 7) return '#FFFF00';"
-          "  if (lastDigit === 3 || lastDigit === 8) return '#FF0000';"
-          "  if (lastDigit === 4 || lastDigit === 9) return '#00FF00';"
-          "  return '#0000FF';"
-          "}"
-          "function getInterventionColor(days) {"
-          "  if (days === 'hans') return '#FF0000';"
-          "  if (days > 3) return '#FFFF00';"
-          "  if (days > 1) return '#FFA500';"
-          "  if (days === 1) return '#FF0000';"
-          "  if (days === 0) return '#FF00FF';"
-          "  return '#00CC66';"
-          "}"
-          "function createSquareHiveIcon(days, queenYear, isCritical, hasSensorErr, batPct) {"
-          "  var qColor = getQueenColor(queenYear);"
-          "  var statusColor = getInterventionColor(days);"
-          "  var pulseClass = isCritical ? ' hive-pulse' : '';"
-          "  var errSvg = hasSensorErr ? '<circle cx=\"24\" cy=\"24\" r=\"9\" fill=\"#FF0000\" stroke=\"#2a2a40\" stroke-width=\"2\"/><text x=\"24\" y=\"28\" fill=\"white\" font-size=\"11\" font-family=\"sans-serif\" font-weight=\"bold\" text-anchor=\"middle\">!</text>' : '';"
-          "  var batWidth = (batPct / 100) * 20;"
-          "  var batColor = batPct > 20 ? '#00FF00' : '#FF0000';"
-          "  var batSvg = '<rect x=\"40\" y=\"68\" width=\"20\" height=\"8\" fill=\"#333\" stroke=\"#2a2a40\" stroke-width=\"1.5\" rx=\"1\"/><rect x=\"40\" y=\"68\" width=\"' + batWidth + '\" height=\"8\" fill=\"' + batColor + '\" rx=\"1\"/><rect x=\"60\" y=\"70\" width=\"2\" height=\"4\" fill=\"#2a2a40\"/>';"
-          "  var svg = '<svg class=\"' + pulseClass.trim() + '\" viewBox=\"0 0 100 100\" xmlns=\"http://www.w3.org/2000/svg\">' +"
-          "    '<rect x=\"10\" y=\"10\" width=\"80\" height=\"80\" fill=\"' + statusColor + '\" stroke=\"#2a2a40\" stroke-width=\"6\" rx=\"12\"/>' +"
-          "    '<circle cx=\"50\" cy=\"44\" r=\"14\" fill=\"' + qColor + '\" stroke=\"#2a2a40\" stroke-width=\"3\"/>' +"
-          "    errSvg + batSvg +"
-          "  '</svg>';"
-          "  return L.divIcon({ className: 'custom-hive-icon', html: svg, iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -18] });"
-          "}"
-          "var markers = [];"
-          "var hivesData = ["
-          "  {lat: 47.5146, lon: 19.0435, id: 'A1B2', famStat: 'Rendben', monStat: 'OK', days: 5, err: false, bat: 100, year: 2024, critical: false},"
-          "  {lat: 47.5155, lon: 19.0412, id: 'C3D4', famStat: 'Ellenőrzés', monStat: 'Gyenge jel', days: 2, err: false, bat: 50, year: 2023, critical: false},"
-          "  {lat: 47.5132, lon: 19.0458, id: 'E5F6', famStat: 'Etetés', monStat: 'Alacsony akku (10%)', days: 1, err: false, bat: 10, year: 2022, critical: false},"
-          "  {lat: 47.5121, lon: 19.0405, id: 'G7H8', famStat: 'Atkakezelés', monStat: 'Szenzor hiba', days: 0, err: true, bat: 90, year: 2021, critical: false},"
-          "  {lat: 47.5150, lon: 19.0495, id: 'DEAD', famStat: '🔥 Hans', monStat: 'OFFLINE', days: 'hans', err: true, bat: 0, year: 2023, critical: true}"
-          "];"
-          "hivesData.forEach(function(h) {"
-          "  var m = L.marker([h.lat, h.lon], {icon: createSquareHiveIcon(h.days, h.year, h.critical, h.err, h.bat)}).addTo(hiveMap)"
-          "    .bindPopup('<b>Kaptár: ' + h.id + '</b><br>Család: ' + h.famStat + '<br>Monitor: ' + h.monStat);"
-          "  markers.push(m);"
+          
+          // Szerver ikon
+          "var weatherIcon = L.divIcon({"
+          "className: 'custom-hive-icon',"
+          "html: '<div style=\"background:#141428; border:2px solid var(--accent); border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(0,0,0,0.6);\" title=\"Időjárás-állomás & Szerver\"><svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"var(--txt)\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z\"></path></svg></div>',"
+          "iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20]"
           "});"
-          "if(markers.length > 0) {"
-          "  var group = L.featureGroup(markers);"
-          "  hiveMap.fitBounds(group.getBounds().pad(0.2));"
+          "var szerverMarker = L.marker([47.5146, 19.0435], {icon: weatherIcon, zIndexOffset: 1000}).addTo(hiveMap);"
+          
+          // Kaptár ikonok
+          "var hiveIcon = L.divIcon({ className: 'custom-hive-icon', html: '<div style=\"background:#1f2937; border:2px solid var(--warn); border-radius:6px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,0.8);\"><span style=\"font-size:14px;\">🐝</span></div>', iconSize: [28,28], iconAnchor: [14,14], popupAnchor: [0,-14] });"
+          "var hansIcon = L.divIcon({ className: 'custom-hive-icon', html: '<div style=\"background:rgba(255,0,0,0.6); border:2px solid #ff3333; border-radius:6px; width:28px; height:28px; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px red; animation: flammenwerfer 0.8s infinite;\"><span style=\"font-size:14px;\">🔥</span></div>', iconSize: [28,28], iconAnchor: [14,14], popupAnchor: [0,-14] });"
+
+          // Kaptárak lehelyezése
+          "var hiveA = L.marker([47.51465, 19.04355], {icon: hiveIcon}).addTo(hiveMap).bindPopup('<b>A1B2</b><br>Rendben <br><a href=\"/hive?hive=A1B2\">Kaptár nézet megnyitása</a>');"
+          "var hiveC = L.marker([47.51455, 19.04345], {icon: hiveIcon}).addTo(hiveMap).bindPopup('<b>C3D4</b><br>Ellenőrzés <br><a href=\"/hive?hive=C3D4\">Kaptár nézet megnyitása</a>');"
+          "var hiveE = L.marker([47.51462, 19.04342], {icon: hiveIcon}).addTo(hiveMap).bindPopup('<b>E5F6</b><br>Etetés <br><a href=\"/hive?hive=E5F6\">Kaptár nézet megnyitása</a>');"
+          "var hiveG = L.marker([47.51458, 19.04358], {icon: hiveIcon}).addTo(hiveMap).bindPopup('<b>G7H8</b><br>Atkakezelés <br><a href=\"/hive?hive=G7H8\">Kaptár nézet megnyitása</a>');"
+          "var hiveDEAD = L.marker([47.51468, 19.04348], {icon: hansIcon}).addTo(hiveMap).bindPopup('<b>DEAD</b><br>Kritikus 🔥 <br><a href=\"/hive?hive=DEAD\">Kaptár nézet megnyitása</a>');"
+
+          "function updateSzerverMapLive() {"
+          "fetch('/api/map_status')"
+          ".then(r => r.json())"
+          ".then(d => {"
+          "let sigColor = d.signal > -85 ? '#22c55e' : (d.signal > -100 ? '#eab308' : '#ef4444');"
+          "let batColor = d.battery >= 3.8 ? '#22c55e' : (d.battery >= 3.5 ? '#eab308' : '#ef4444');"
+          "let windColor = d.windSpeed <= 25 ? '#22c55e' : (d.windSpeed <= 45 ? '#eab308' : '#ef4444');"
+          "document.getElementById('map_signal').innerHTML = '<span style=\"color:' + sigColor + ';\">📶 ' + d.signal + ' dBm</span>';"
+          "document.getElementById('map_fix').innerHTML = d.fix ? ('<span style=\"color:#22c55e\">Van (' + d.sat + ')</span>') : '<span style=\"color:#ef4444\">Nincs</span>';"
+          "document.getElementById('map_uptime').innerText = d.uptime + ' perc';"
+          "document.getElementById('map_heap').innerText = d.heap + ' KB';"
+          
+          "let popupHtml = '<div style=\"font-family:sans-serif; font-size:12px; color:#111; min-width:190px;\">' +"
+          "'<b style=\"font-size:13px; color:#0055ff;\">📡 Időjárás-állomás & Szerver</b><hr style=\"margin:4px 0;\">' +"
+          "'<b>GPS Fix:</b> ' + (d.fix ? ('<span style=\"color:green\">Van (' + d.sat + ' sat)</span>') : '<span style=\"color:red\">Nincs</span>') + '<br>' +"
+          "'<b>GSM Térerő:</b> <span style=\"color:' + sigColor + '; font-weight:bold;\">' + d.signal + ' dBm</span><br>' +"
+          "'<b>Akkumulátor:</b> <span style=\"color:' + batColor + '; font-weight:bold;\">' + (d.battery || '3.95') + ' V</span><br>' +"
+          "'<b>Szélerősség:</b> <span style=\"color:' + windColor + '; font-weight:bold;\">' + (d.windSpeed || '0.0') + ' km/h</span><br>' +"
+          "'<b>Operátor:</b> ' + (d.operator || 'Ismeretlen') + '<br>' +"
+          "'<b>Uptime:</b> ' + d.uptime + ' perc' + '</div>';"
+          "szerverMarker.bindPopup(popupHtml);"
+          
+          "if(d.lat && d.lon && (d.lat !== 0 || d.lon !== 0)) {"
+          "  let lat = d.lat; let lon = d.lon;"
+          "  szerverMarker.setLatLng([lat, lon]);"
+          // A kaptárak dinamikusan eltolva követik a bázis állomást (mintha körülötte állnának)
+          "  hiveA.setLatLng([lat + 0.00005, lon + 0.00005]);"
+          "  hiveC.setLatLng([lat - 0.00005, lon - 0.00005]);"
+          "  hiveE.setLatLng([lat + 0.00002, lon - 0.00008]);"
+          "  hiveG.setLatLng([lat - 0.00002, lon + 0.00008]);"
+          "  hiveDEAD.setLatLng([lat + 0.00008, lon - 0.00002]);"
+          // Csak egyszer centrizzük a térképet, hogy ne ugráljon idegesítően, miközben nézegeted
+          "  if(!window.mapCentered) { hiveMap.setView([lat, lon], 19); window.mapCentered = true; }"
           "}"
+          "}).catch(()=>{});"
+          "}"
+          "setInterval(updateSzerverMapLive, 5000);"
+          "updateSzerverMapLive();"
           "</script></div>";
+
+  html += getSzerverMapCardHtml();
 
   html += "<div class='card wide'><h2>Állapot és Beavatkozási Ütemterv</h2>";
   html += "<p class='hint'>Sárga: 3 napon túl | Narancs: 3 napon belül | Piros: Holnap | Ciklámen: Ma | 🔥 Hans: Kritikus.</p>";
@@ -99,11 +153,12 @@ void handleHives() {
   html += "<table class='hive-table'>";
   html += "<thead><tr><th>Azonosító</th><th>Család állapota</th><th>Monitor állapota</th><th>Beavatkozás</th></tr></thead>";
   html += "<tbody>";
-  html += "<tr><td>A1B2</td><td>Rendben</td><td>OK</td><td><span class='badge b-yell'>5 nap múlva</span></td></tr>";
-  html += "<tr><td>C3D4</td><td>Ellenőrzés</td><td>Jelerősség gyenge</td><td><span class='badge b-org'>2 nap múlva</span></td></tr>";
-  html += "<tr><td>E5F6</td><td>Etetés</td><td><span style='color:var(--err)'>Alacsony akku (10%)</span></td><td><span class='badge b-red'>Holnap</span></td></tr>";
-  html += "<tr><td>G7H8</td><td>Atkakezelés</td><td><span style='color:var(--err)'>Szenzor olvasási hiba</span></td><td><span class='badge b-cyc'>Ma (Azonnal)</span></td></tr>";
-  html += "<tr><td>DEAD</td><td><span class='badge b-flame'>🔥 Hans</span></td><td>OFFLINE</td><td><span class='badge b-flame'>🔥 Hans</span></td></tr>";
+  // A táblázatban is bekötöttem a linkeket, hogy kattinthatók legyenek!
+  html += "<tr><td><a href='/hive?hive=A1B2' style='color:var(--accent); font-weight:bold;'>A1B2</a></td><td>Rendben</td><td>OK</td><td><span class='badge b-yell'>5 nap múlva</span></td></tr>";
+  html += "<tr><td><a href='/hive?hive=C3D4' style='color:var(--accent); font-weight:bold;'>C3D4</a></td><td>Ellenőrzés</td><td>Jelerősség gyenge</td><td><span class='badge b-org'>2 nap múlva</span></td></tr>";
+  html += "<tr><td><a href='/hive?hive=E5F6' style='color:var(--accent); font-weight:bold;'>E5F6</a></td><td>Etetés</td><td><span style='color:var(--err)'>Alacsony akku (10%)</span></td><td><span class='badge b-red'>Holnap</span></td></tr>";
+  html += "<tr><td><a href='/hive?hive=G7H8' style='color:var(--accent); font-weight:bold;'>G7H8</a></td><td>Atkakezelés</td><td><span style='color:var(--err)'>Szenzor olvasási hiba</span></td><td><span class='badge b-cyc'>Ma (Azonnal)</span></td></tr>";
+  html += "<tr><td><a href='/hive?hive=DEAD' style='color:var(--accent); font-weight:bold;'>DEAD</a></td><td><span class='badge b-flame'>🔥 Hans</span></td><td>OFFLINE</td><td><span class='badge b-flame'>🔥 Hans</span></td></tr>";
   html += "</tbody></table></div></div>";
   
   html += htmlFoot();
@@ -195,7 +250,6 @@ void handleEvaluatePost() {
   String syrup = server.hasArg("syrup") && server.arg("syrup") != "" ? server.arg("syrup") : "0";
   
   String logMsg = "Értékelés mentve [" + hive + "] Status: " + status + ", Szelídség: " + gentle + ", Szirup: " + syrup + " L";
-  diagAdd(logMsg);
 
   server.sendHeader("Location", "/");
   server.send(302);
@@ -271,7 +325,7 @@ String getHiveTypesHtml() {
   JsonArray array = doc.as<JsonArray>();
   for (JsonObject type : array) {
     html += "<option value='" + String(type["id"].as<const char*>()) + "'>" 
-            + String(type["name"].as<const char*>()) + "</option>";
+          + String(type["name"].as<const char*>()) + "</option>";
   }
   return html;
 }

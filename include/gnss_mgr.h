@@ -45,7 +45,7 @@ struct GnssState {
 };
 extern GnssState gGnss;
 void gnssLoadAssist();
-void gnssSaveAssist(float lat, float lon);
+void gnssSaveAssist(float lat, float lon, float hdop = 99.9);
 String gnssReceiverStatusText();
 String gnssCompassDir(float course);
 void gnssStart();

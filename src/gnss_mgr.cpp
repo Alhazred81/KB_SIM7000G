@@ -6,6 +6,9 @@ unsigned long gLastGnssPoll = 0;
 uint8_t gGnssPollStep = 0;
 uint8_t gPosReportDays = 0;
 
+static float lastLoggedLat = 0.0;
+static float lastLoggedLon = 0.0;
+
 
 
 void gnssLoadAssist() {
@@ -21,16 +24,32 @@ void gnssLoadAssist() {
   }
 }
 
-void gnssSaveAssist(float lat, float lon) {
+// 1. MÓDOSÍTOTT MENTŐ FÜGGVÉNY
+void gnssSaveAssist(float lat, float lon, float hdop) {
   if(lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
+
+  // Szűrő: HDOP ellenőrzés és mozgás detektálás (kb. 2 méter)
+  float deltaLat = abs(lat - lastLoggedLat);
+  float deltaLon = abs(lon - lastLoggedLon);
+  
+  if (!(hdop < 2.5 && deltaLat < 0.00002 && deltaLon < 0.00002)) {
+      Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f (HDOP: %.1f)\n", lat, lon, hdop);
+      lastLoggedLat = lat;
+      lastLoggedLon = lon;
+  }
+
   gGnss.assistLat = lat;
   gGnss.assistLon = lon;
   EEPROM.write(ADDR_GNSS_ASSIST_FLAG, MAGIC_BYTE);
   EEPROM.put(ADDR_GNSS_ASSIST_LAT, gGnss.assistLat);
   EEPROM.put(ADDR_GNSS_ASSIST_LON, gGnss.assistLon);
   EEPROM.commit();
-  Serial.println("[GNSS] Kiindulo koordinata mentve: " + String(gGnss.assistLat, 6) + ", " + String(gGnss.assistLon, 6));
 }
+
+// 2. MÓDOSÍTOTT GNSSPOLLPOSITION (A hívásnál adjuk át a HDOP-t)
+// Keresd meg a gnssPollPosition-ban ezt a sort:
+// gnssSaveAssist(gGnss.lat, gGnss.lon);
+// ...és cseréld erre:
 
 String gnssReceiverStatusText() {
   if(!gGnss.enabled) return "Kikapcsolva";
@@ -134,7 +153,6 @@ void gnssPollPosition() {
   gGnss.fix = (gGnss.fixStatus == 1);
   gGnss.lastError = "";
 
-  // GPS lathato (view) - ez fix nelkul is elerheto, jelzi hogy keres-e mar egyaltalan
   gGnss.satGpsInView = f[14].length() ? f[14].toInt() : -1;
 
   if(gGnss.fix){
@@ -144,13 +162,11 @@ void gnssPollPosition() {
     gGnss.speed  = f[6].toFloat();
     gGnss.course = f[7].toFloat();
     gGnss.hdop   = f[10].toFloat();
-    // f[15] = OSSZES hasznalt muhold (minden rendszer egyutt), NEM csak GPS!
     gGnss.satUsed = f[15].length() ? f[15].toInt() : 0;
     gGnss.lastGoodFix = millis();
 
-    // Utolso ismert pozicio automatikus mentese minden sikeres fixnel -
-    // ez lesz a kiindulopont legkozelebb, felulirva az alapertelmezettet.
-    gnssSaveAssist(gGnss.lat, gGnss.lon);
+    // Itt hívjuk a javított függvényt a HDOP-vel!
+    gnssSaveAssist(gGnss.lat, gGnss.lon, gGnss.hdop);
 
     String utc = f[2];
     if(utc.length() >= 14){
@@ -162,6 +178,40 @@ void gnssPollPosition() {
   }
 }
 
+void updateGnssAssist(float lat, float lon, float hdop) {
+    // 1. Ha jó a HDOP és a változás minimális, csak frissítjük a memóriát, de nem logolunk
+    bool isStable = (hdop < 2.0 && abs(lat - lastLoggedLat) < 0.00001 && abs(lon - lastLoggedLon) < 0.00001);
+    
+    if (!isStable) {
+        // Itt történik a tényleges mentés/logolás
+        Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f\n", lat, lon);
+        lastLoggedLat = lat;
+        lastLoggedLon = lon;
+    }
+    
+    // ... a többi GNSS logika ...
+}
+
+void logGnssPosition(float lat, float lon, float hdop) {
+    // 1. STABILITÁS ELLENŐRZÉSE:
+    // Csak akkor logolunk, ha:
+    // - A HDOP "jó" (pl. < 2.5) 
+    // - ÉS a pozíció érdemben változott (legalább 1-2 métert)
+    
+    float deltaLat = abs(lat - lastLoggedLat);
+    float deltaLon = abs(lon - lastLoggedLon);
+    
+    if (hdop < 2.5 && deltaLat < 0.00002 && deltaLon < 0.00002) {
+        // Ha a fix stabil és nem mozdult érdemben, NE logoljunk.
+        return; 
+    }
+
+    // 2. HA ELTÉRÉS VAN:
+    // Frissítjük a referencia pontokat és logolunk
+    Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f (HDOP: %.1f)\n", lat, lon, hdop);
+    lastLoggedLat = lat;
+    lastLoggedLon = lon;
+}
 // +CGNSSINFO valasz formatuma (SIMCom hivatalos dokumentacio alapjan):
 // mode,GPS-SVs,GLONASS-SVs,BEIDOU-SVs,lat,N/S,lon,E/W,date,time,alt,speed,course,PDOP,HDOP,VDOP
 // Pelda: +CGNSSINFO: 2,06,03,00,3426.693019,S,15051.184731,E,170521,034216.0,46.5,0.0,0.0,1.2,0.9,0.9

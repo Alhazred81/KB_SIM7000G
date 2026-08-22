@@ -41,6 +41,7 @@ String htmlFoot() {
 }
 
 // ─── CSS Stíluslap (C++ nézetekhez) ───────────────────────────
+// ─── CSS Stíluslap (C++ nézetekhez) ───────────────────────────
 void handleCss() {
   String css = R"css(
     :root{--bg:#05050a;--nav:#0d0d1a;--card:#141428;--txt:#e0e0e0;--txt2:#888;
@@ -57,13 +58,13 @@ void handleCss() {
     nav a:hover {color:var(--txt)}
     nav a.on {color:var(--accent);border-bottom-color:var(--accent)}
     
-    /* Elrendezés */
-    .wrap {max-width:800px;margin:0 auto;padding:16px;display:grid;gap:16px;
-    grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-    h1 {grid-column:1/-1;font-size:20px;margin-bottom:4px;color:#fff}
-    .card {background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
-    .card.wide {grid-column:1/-1}
-    .card.full {grid-column:1/-1}
+/* Elrendezés (Szigorúan fix méretű Flexbox) */
+    .wrap {max-width:1850px;margin:0 auto;padding:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+    h1 {width:100%;font-size:20px;margin-bottom:-4px;color:#fff}
+    .card {background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;
+    width:340px;max-width:100%;flex:0 0 auto}
+    .card.wide {width:696px;max-width:100%;flex:0 0 auto}
+    .card.full {width:100%;flex:0 0 auto}
     h2 {font-size:14px;text-transform:uppercase;letter-spacing:1px;color:var(--txt2);
     margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:6px}
     

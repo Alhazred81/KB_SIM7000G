@@ -19,6 +19,7 @@
 #include "NtfyClient.h"
 #include "sensors.h"
 #include "time_mgr.h"
+#include "weather_mgr.h"
 #include "web_ui.h"
 #include "wifi_sta.h"
 
@@ -68,6 +69,7 @@ bool           gSmsSendDone       = false;
 String         gSmsSendResult     = ""; 
 String         loadReportConfig();
 extern String gReportTimes;
+extern void backgroundTaskLoop();
 
 void loadSmsInboxLimit() {
   // Ha EEPROM-ból olvasod, itt kell betölteni, 
@@ -334,7 +336,8 @@ void loop() {
   wifiStaWatchdog();
   smsInboxLoop();
   sensorsLoop();
-
+  gnssLoop();
+  backgroundTaskLoop();
 
   //időzített riport ellenőrzése és küldése
   static unsigned long lastReportCheck = 0;
