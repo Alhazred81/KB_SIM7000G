@@ -4,6 +4,7 @@
 
 unsigned long gLastGnssPoll = 0;
 uint8_t gGnssPollStep = 0;
+uint8_t gPosReportDays = 0;
 
 
 
@@ -237,4 +238,10 @@ void gnssLoop() {
     gGnss.lastAntennaPoll = millis();
   }
   gGnssPollStep = (gGnssPollStep + 1) % 3;
+}
+
+void gnssSaveConfig(uint8_t days) {
+  gPosReportDays = days;
+  EEPROM.write(ADDR_POS_DAYS, days);
+  EEPROM.commit();
 }

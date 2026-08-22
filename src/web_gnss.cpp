@@ -56,7 +56,7 @@ void handleGnss() {
   html += stateRow("GNSS UTC", gGnss.dateStr + " " + gGnss.timeStr);
   html += "</div>";
 
-  html += "<div class='card wide'><h2>Kiindulo koordinata</h2>";
+ html += "<div class='card wide'><h2>Kiindulo koordinata</h2>";
   html += stateRow("Latitude", String(gGnss.assistLat, 6));
   html += stateRow("Longitude", String(gGnss.assistLon, 6));
   html += "<form action='/gnssassist' method='POST'>";
@@ -64,6 +64,12 @@ void handleGnss() {
   html += "<label>Longitude</label><input type='text' name='lon' value='" + String(gGnss.assistLon, 6) + "' inputmode='decimal'>";
   html += "<button class='sec'>Koordinata mentese</button></form>";
   html += "</div>";
+  html += "<div class='card wide'><h2>Pozíció jelentés gyakorisága</h2>";
+  html += "<form action='/gnssctl' method='POST'>";
+  html += "<p class='hint'>0 = Folyamatosan bekapcsolva.<br>1-255 = X naponta ellenőrzi a pozíciót (illetve biztonsági riasztás esetén).</p>";
+  html += "<label>Gyakoriság (nap)</label>";
+  html += "<input type='number' name='pos_days' min='0' max='255' value='" + String(gPosReportDays) + "'>";
+  html += "<button class='sec'>Mentés</button></form></div>";
 
   html += "<div class='card diag-card wide'><h2>🛰️ GNSS Live Debug</h2>";
   html += "<div class='diag' id='gnssDebugBox' style='max-height:200px; overflow-y:auto; font-size:11px;'>Betöltés...</div>";
@@ -189,9 +195,17 @@ void handleGnssAssist() {
 
 void handleGnssCtl() {
   if(sendModemBusyPage("GNSS", "6", "/gnss")) return;
-  String action = server.hasArg("action") ? server.arg("action") : "";
-  if(action == "start") gnssStart();
-  else if(action == "stop") gnssStop();
+  
+  if (server.hasArg("pos_days")) {
+    uint8_t d = server.arg("pos_days").toInt();
+    gnssSaveConfig(d);
+    diagAdd("Pozíció jelentés gyakorisága mentve: " + String(d) + " nap");
+  } else {
+    String action = server.hasArg("action") ? server.arg("action") : "";
+    if(action == "start") gnssStart();
+    else if(action == "stop") gnssStop();
+  }
+  
   server.sendHeader("Location","/gnss");
   server.send(302);
 }

@@ -54,3 +54,5 @@ void gnssPollPosition();
 void gnssPollExtendedSats();
 void gnssPollAntenna();
 void gnssLoop();
+extern uint8_t gPosReportDays;
+void gnssSaveConfig(uint8_t days);

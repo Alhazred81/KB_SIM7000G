@@ -38,7 +38,7 @@ void handleRoot() {
   if (!checkPinGuard()) return;
   String html = htmlHead("Áttekintés", "1");
 
-  // NFC Olvasó kártya
+  // NFC Olvasó kártya (Változatlan)
   html += "<div class='card'><h2>Kaptár Azonosítás (NFC)</h2>";
   html += "<button id='nfcBtn' class='sec' style='width:100%'>📱 NFC Címke Olvasása</button>";
   html += "<div id='nfcResult' class='msg' style='display:none; margin-top:10px;'></div>";
@@ -78,30 +78,68 @@ void handleRoot() {
           "    res.innerText = 'Hiba az olvasáskor: ' + error;"
           "  }"
           "});"
-          "</script>";
-  html += "</div>";
+          "</script></div>";
 
-  // Eredeti kártyák
+  // Lambda segédfüggvény az élő sorokhoz ID-vel
+  auto liveRow = [](const String& label, const String& val, const String& id, const String& colorClass = "") {
+    String c = colorClass.length() ? (" " + colorClass) : "";
+    return "<div class='row'><span class='k'>" + label + "</span><span class='v" + c + "' id='" + id + "'>" + val + "</span></div>";
+  };
+
   html += "<div class='card'><h2>Modem Állapot</h2>";
-  html += stateRow("Modem kész", gModem.ready ? "Igen" : "Nem", gModem.ready ? "g" : "r");
-  html += stateRow("Regisztrálva", gModem.registered ? "Igen" : "Nem", gModem.registered ? "g" : "r");
-  html += stateRow("Operátor", gModem.operatorName.length() ? gModem.operatorName : "Ismeretlen");
-  html += stateRow("Jelminőség", String(gModem.signalQuality));
-  html += stateRow("Hálózati típus", gModem.netType.length() ? gModem.netType : "Ismeretlen");
+  html += liveRow("Modem kész", gModem.ready ? "Igen" : "Nem", "live_modemReady", gModem.ready ? "g" : "r");
+  html += liveRow("Regisztrálva", gModem.registered ? "Igen" : "Nem", "live_registered", gModem.registered ? "g" : "r");
+  html += liveRow("Operátor", gModem.operatorName.length() ? gModem.operatorName : "Ismeretlen", "live_operator");
+  html += liveRow("Jelminőség", String(gModem.signalQuality), "live_signal");
+  html += liveRow("Hálózati típus", gModem.netType.length() ? gModem.netType : "Ismeretlen", "live_netType");
   html += "</div>";
 
   html += "<div class='card'><h2>GPS / GNSS Pozíció</h2>";
-  html += stateRow("GPS Fix", gGnss.fix ? "Van Fix" : "Nincs Fix", gGnss.fix ? "g" : "y");
-  html += stateRow("Szélesség", String(gGnss.lat, 6));
-  html += stateRow("Hosszúság", String(gGnss.lon, 6));
-  html += stateRow("Műholdak száma", String(gGnss.satUsed));
+  html += liveRow("GPS Fix", gGnss.fix ? "Van Fix" : "Nincs Fix", "live_gnssFix", gGnss.fix ? "g" : "y");
+  html += liveRow("Szélesség", String(gGnss.lat, 6), "live_lat");
+  html += liveRow("Hosszúság", String(gGnss.lon, 6), "live_lon");
+  html += liveRow("Műholdak száma", String(gGnss.satUsed), "live_sat");
   html += "</div>";
 
   html += "<div class='card'><h2>Idő & Rendszer</h2>";
-  html += stateRow("Helyi idő", gTime.synced ? gTime.localTime : "Szinkronizálás alatt...", gTime.synced ? "g" : "y");
-  html += stateRow("Szabad memória", String(ESP.getFreeHeap() / 1024) + " KB");
-  html += stateRow("Uptime", String(millis() / 60000) + " perc");
+  html += liveRow("Helyi idő", gTime.synced ? gTime.localTime : "Szinkronizálás alatt...", "live_time", gTime.synced ? "g" : "y");
+  html += liveRow("Szabad memória", String(ESP.getFreeHeap() / 1024) + " KB", "live_heap");
+  html += liveRow("Uptime", String(millis() / 60000) + " perc", "live_uptime");
   html += "</div>";
+
+  // JS háttér-frissítő logika
+  html += R"js(<script>
+  function updateHome() {
+    fetch('/api/home').then(r => r.json()).then(d => {
+      const setLive = (id, text, colorClass) => {
+        let el = document.getElementById(id);
+        if(el) {
+          el.innerText = text;
+          el.className = 'v' + (colorClass ? ' ' + colorClass : '');
+        }
+      };
+      
+      setLive('live_modemReady', d.modemReady ? 'Igen' : 'Nem', d.modemReady ? 'g' : 'r');
+      setLive('live_registered', d.registered ? 'Igen' : 'Nem', d.registered ? 'g' : 'r');
+      setLive('live_operator', d.operator || 'Ismeretlen', '');
+      setLive('live_signal', d.signal, '');
+      setLive('live_netType', d.netType || 'Ismeretlen', '');
+      
+      setLive('live_gnssFix', d.gnssFix ? 'Van Fix' : 'Nincs Fix', d.gnssFix ? 'g' : 'y');
+      setLive('live_lat', d.lat.toFixed(6), '');
+      setLive('live_lon', d.lon.toFixed(6), '');
+      setLive('live_sat', d.sat, '');
+      
+      setLive('live_time', (d.time && d.time !== '') ? d.time : 'Szinkronizálás alatt...', (d.time && d.time !== '') ? 'g' : 'y');
+      
+      let heapVal = document.getElementById('live_heap');
+      let uptimeVal = document.getElementById('live_uptime');
+      // A memóriát és uptime-ot a szerver api/home nem adja vissza alapból, 
+      // de a többi adat frissülni fog. (Opcionálisan a backend json-be bele lehet tenni).
+    }).catch(()=>{});
+  }
+  setInterval(updateHome, 3000);
+  </script>)js";
 
   html += getCalendarCardHtml();
 
