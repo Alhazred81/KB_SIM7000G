@@ -49,6 +49,8 @@ extern void handleConfig();
 extern void handleConfigPost();
 extern void handleRegisterPart();
 extern void handleRegisterPartPost();
+extern void handleGetEvaluationsJson();
+extern void handleGetColonyFunctionsJson();
 
 // --- NFC / RFID ---
 extern void handleNfc();
@@ -302,12 +304,14 @@ void webBegin() {
   server.on("/hive", handleHiveView);
   server.on("/treatment", handleTreatment);
   server.on("/evaluation", handleEvaluation);
+  server.on("/api/evaluations", HTTP_GET, handleGetEvaluationsJson);
   server.on("/api/treatments", HTTP_GET, handleGetTreatmentsJson);
   server.on("/evaluate_post", HTTP_POST, handleEvaluatePost);
   server.on("/config", handleConfig);
   server.on("/config_post", HTTP_POST, handleConfigPost);
   server.on("/register_part", handleRegisterPart);
   server.on("/register_part_post", HTTP_POST, handleRegisterPartPost);
+  server.on("/api/colony_functions", HTTP_GET, handleGetColonyFunctionsJson);
 
   // --- Víztartály és szirupadagoló
 

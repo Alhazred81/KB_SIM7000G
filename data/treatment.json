@@ -1,105 +1,100 @@
 {
-  "version": "2026.08.23-5",
+  "version": "2026.08.23-2",
   "categories": [
     {
-      "id": "feeding",
-      "name": "Etetés",
-      "options": [
+      "name": "👑 Anyanevelési Mesterterv",
+      "id": "queen_rearing",
+      "items": [
         {
-          "id": "syrup",
-          "name": "Szirup (l)",
-          "needs_value": true,
+          "label": "Petés Mesterterv indítása",
+          "type": "alert",
+          "text": "Petés Mesterterv aktiválva: Tenyészlép be V.7., Álcázás V.9., Kelés V.22., Petézés VI.3."
+        },
+        {
+          "label": "Álcás Mesterterv indítása",
+          "type": "alert",
+          "text": "Álcás Mesterterv aktiválva: Tenyészlép be V.6., Álcázás V.10., Ráanyásítás V.28., Petézés VI.3."
+        }
+      ]
+    },
+    {
+      "name": "🍯 Etetés",
+      "id": "feeding",
+      "items": [
+        {
+          "label": "Szirup (l)",
+          "type": "prompt",
+          "title": "Szirup mennyisége (l):",
+          "default": "1",
           "unit": "l"
         },
         {
-          "id": "sugar_pattie",
-          "name": "Cukorlepény (kg)",
-          "needs_value": true,
+          "label": "Cukorlepény (kg)",
+          "type": "prompt",
+          "title": "Cukorlepény mennyisége (kg):",
+          "default": "1",
           "unit": "kg"
         },
         {
-          "id": "protein_pattie",
-          "name": "Fehérjés lepény (kg)",
-          "needs_value": true,
+          "label": "Fehérjés lepény (kg)",
+          "type": "prompt",
+          "title": "Fehérjés lepény mennyisége (kg):",
+          "default": "1",
           "unit": "kg"
         },
         {
-          "id": "medicated_pattie",
-          "name": "Gyógyszeres lepény (kg)",
-          "needs_value": true,
+          "label": "Gyógyszeres lepény (kg)",
+          "type": "prompt",
+          "title": "Gyógyszeres lepény mennyisége (kg):",
+          "default": "1",
           "unit": "kg"
         }
       ]
     },
     {
+      "name": "💊 Gyógykezelés",
       "id": "medical",
-      "name": "Gyógykezelés",
-      "options": [{ "id": "nosevit", "name": "Nosevit" }]
-    },
-    {
-      "id": "mite_control",
-      "name": "Atkairtás",
-      "options": [
-        {
-          "id": "oxalic_acid",
-          "name": "Oxálsav",
-          "sub_options": [
-            { "id": "extended_carrier", "name": "Tartós hordozó" },
-            { "id": "spraying", "name": "Spriccelés" },
-            { "id": "sublimation", "name": "Szublimálás" }
-          ]
-        },
-        { "id": "formic_acid", "name": "Hangyasav" },
-        {
-          "id": "other_mite",
-          "name": "Egyéb",
-          "sub_options": [
-            { "id": "essential_oils", "name": "Illóolaj" },
-            { "id": "drone_brood_removal", "name": "Heresejt-kivágás" }
-          ]
-        }
+      "items": [
+        { "label": "Nosevit", "type": "alert", "text": "Nosevit rögzítve" }
       ]
     },
     {
-      "id": "inspections",
-      "name": "Vizsgálatok",
-      "options": [
+      "name": "🛡️ Atkairtás",
+      "id": "mites",
+      "items": [
         {
-          "id": "alcohol_wash",
-          "name": "Atka: Alkoholos lemosás (db)",
-          "needs_value": true,
-          "unit": "db"
+          "label": "Oxálsav: Tartós hordozó",
+          "type": "alert",
+          "text": "Oxálsav - Tartós hordozó rögzítve"
         },
         {
-          "id": "sugar_roll",
-          "name": "Atka: Porcukros lerázás (db)",
-          "needs_value": true,
-          "unit": "db"
+          "label": "Oxálsav: Permetezés",
+          "type": "alert",
+          "text": "Oxálsav - Permetezés rögzítve"
         },
         {
-          "id": "co2_test",
-          "name": "Atka: CO2 vizsgálat (db)",
-          "needs_value": true,
-          "unit": "db"
+          "label": "Oxálsav: Szublimálás",
+          "type": "alert",
+          "text": "Oxálsav - Szublimálás rögzítve"
         },
-        {
-          "id": "vet_inspection",
-          "name": "Méhegészségügyi vizsgálat",
-          "needs_value": true,
-          "unit": "eredmény"
-        }
+        { "label": "Hangyasav", "type": "alert", "text": "Hangyasav rögzítve" }
       ]
     },
     {
-      "id": "other_actions",
-      "name": "Egyéb / Beavatkozások",
-      "options": [
-        { "id": "queen_replacement", "name": "Anyacsere" },
-        { "id": "family_liquidation", "name": "Család felszámolása" },
+      "name": "⚙️ Egyéb / Beavatkozások",
+      "id": "other",
+      "items": [
+        { "label": "Anyacsere", "type": "alert", "text": "Anyacsere rögzítve" },
         {
-          "id": "hans_protocol",
-          "name": "🔥 Hans (biztos igen/nem)",
-          "confirm_hans": true
+          "label": "Család felszámolása",
+          "type": "alert",
+          "text": "Család felszámolása rögzítve"
+        },
+        {
+          "label": "🔥 Hans protokoll",
+          "type": "confirm",
+          "text": "🔥 Hans protokoll végrehajtva!",
+          "confirmText": "🔥 BIZTOSAN végrehajtod a Hans protokollt?"
         }
       ]
     }

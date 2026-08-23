@@ -1,0 +1,15 @@
+{
+  "version": "2026.08.23-1",
+  "colony_functions": [
+    {
+      "name": "Termelő",
+      "id": "producer",
+      "types": ["Méz", "Virágpor", "Propolisz", "Méhméreg", "Pempő"]
+    },
+    {
+      "name": "Szaporítás",
+      "id": "propagation",
+      "types": ["Dajka", "Anya", "Apa", "Starter"]
+    }
+  ]
+}

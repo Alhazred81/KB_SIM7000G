@@ -82,6 +82,13 @@ void handleHiveView() {
           ".b-red   { background: rgba(239,68,68,0.3); color: #ef4444; border: 2px solid #ef4444; }"
           ".b-purp  { background: rgba(168,85,247,0.3); color: #a855f7; border: 2px solid #a855f7; }"
           ".b-flame { background: rgba(255,0,0,0.6); color: #fff; border: 2px solid #ff3333; animation: flammenwerfer 0.8s infinite; }"
+          
+          /* Kesztyűbarát modális ablak stílusok */
+          ".modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box; }"
+          ".modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; width: 100%; max-width: 450px; max-height: 90vh; overflow-y: auto; }"
+          ".modal-btn { display: block; width: 100%; padding: 16px; margin-bottom: 10px; font-size: 18px; font-weight: bold; text-align: left; border-radius: 10px; cursor: pointer; background: #141428; color: var(--txt); border: 1px solid var(--border); }"
+          ".modal-btn:hover { background: var(--border); border-color: var(--accent); }"
+          ".modal-cat { font-size: 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin: 14px 0 6px 0; font-weight: bold; }"
           "</style>";
 
   html += "<div style='display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; width:100%; margin-bottom:15px; gap:10px;'>";
@@ -114,6 +121,8 @@ void handleHiveView() {
   html += "<h2>🐝 Család Adatok</h2>";
   html += stateRow("👑 Anya évjárat", String(queenYear), "y");
   html += stateRow("Család Állapota", famStatus, "");
+  html += "<div class='row'><span class='k'>Funkció / Típus</span><span class='v' id='colony-func-display' style='color:var(--accent);'>Betöltés...</span></div>";
+  html += "<button class='sec' style='margin-top:10px; padding:8px; font-size:13px;' onclick='selectColonyFunction()'>⚙️ Funkció módosítása</button>";
   html += "</div>";
 
   html += "<div class='card full' style='margin:0;'>";
@@ -142,6 +151,57 @@ void handleHiveView() {
   html += "</div>"; 
 
   html += "</div>"; 
+
+  // Modális ablak HTML szerkezete
+  html += "<div id='colonyModal' class='modal-overlay'>"
+          "<div class='modal-content'>"
+          "<h2 style='margin-bottom:12px;'>Család funkció kiválasztása</h2>"
+          "<div id='modal-body'></div>"
+          "<button class='sec' style='margin-top:15px; padding:14px; font-size:16px;' onclick='closeColonyModal()'>Mégse</button>"
+          "</div></div>";
+
+  // JavaScript a kolónia funkciók betöltéséhez és a modális ablak kezeléséhez
+  html += "<script>"
+          "let colonyData = null;"
+          "fetch('/api/colony_functions')"
+          "  .then(r => r.json())"
+          "  .then(data => {"
+          "    colonyData = data;"
+          "    document.getElementById('colony-func-display').innerText = 'Termelő: Méz';"
+          "  }).catch(e => {"
+          "    document.getElementById('colony-func-display').innerText = 'N/A';"
+          "  });"
+
+          "function selectColonyFunction() {"
+          "  if (!colonyData || !colonyData.colony_functions) return;"
+          "  let body = document.getElementById('modal-body');"
+          "  body.innerHTML = '';"
+          "  colonyData.colony_functions.forEach(cat => {"
+          "    let catHeader = document.createElement('div');"
+          "    catHeader.className = 'modal-cat';"
+          "    catHeader.innerText = cat.name;"
+          "    body.appendChild(catHeader);"
+          "    cat.types.forEach(t => {"
+          "      let btn = document.createElement('button');"
+          "      btn.className = 'modal-btn';"
+          "      btn.innerText = t;"
+          "      btn.onclick = function() {"
+          "        let finalVal = cat.name + ': ' + t;"
+          "        alert('Mentve: ' + finalVal);"
+          "        document.getElementById('colony-func-display').innerText = finalVal;"
+          "        closeColonyModal();"
+          "      };"
+          "      body.appendChild(btn);"
+          "    });"
+          "  });"
+          "  document.getElementById('colonyModal').style.display = 'flex';"
+          "}"
+
+          "function closeColonyModal() {"
+          "  document.getElementById('colonyModal').style.display = 'none';"
+          "}"
+          "</script>";
+
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
@@ -173,27 +233,19 @@ void handleMapStatusApi() {
   if (!checkPinGuard()) return;
 
   String json = "{";
-  // Telemetria adatok a jobb/bal felső kártyához
   json += "\"signal\":-68,";
   json += "\"fix\":true,";
   json += "\"sat\":\"5 (3D)\",";
   json += "\"uptime\":120,";
   json += "\"heap\":150,";
-
-  // Kaptárak és Készletek tömbje a térképhez
   json += "\"markers\":[";
-  json += "{\"id\":\"A1B2\",\"type\":\"hive\",\"lat\":47.514700,\"lng\":19.043600,\"status\":\"ok\"},";
-  json += "{\"id\":\"B3C4\",\"type\":\"hive\",\"lat\":47.514650,\"lng\":19.035500,\"status\":\"ok\"},";
-  
-  // --- ITATÓk (Water) - 2 db (Jó és Kritikus) ---
+  json += "{\"id\":\"A1B2\",\"type\":\"hive\",\"lat\":47.514700,\"lng\":19.043600,\"status\":\"ok\",\"colonyFunc\":\"Termelő: Méz\"},";
+  json += "{\"id\":\"B3C4\",\"type\":\"hive\",\"lat\":47.514650,\"lng\":19.035500,\"status\":\"ok\",\"colonyFunc\":\"Szaporítás: Dajka\"},";
   json += "{\"id\":\"W1A2\",\"type\":\"water\",\"lat\":47.514800,\"lng\":19.044000,\"level\":95,\"status\":\"good\"},";
   json += "{\"id\":\"W2B3\",\"type\":\"water\",\"lat\":47.514400,\"lng\":19.042000,\"level\":12,\"status\":\"critical\"},";
-
-  // --- ETETŐK (Syrup) - 2 db (Jó és Alacsony) ---
   json += "{\"id\":\"S3B4\",\"type\":\"syrup\",\"lat\":47.514300,\"lng\":19.044500,\"level\":80,\"status\":\"good\"},";
   json += "{\"id\":\"S4C5\",\"type\":\"syrup\",\"lat\":47.514900,\"lng\":19.041500,\"level\":25,\"status\":\"low\"}";
   json += "]";
-
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -215,7 +267,8 @@ void handleTreatment() {
 
   html += "<div class='card wide treatment-container'>";
   html += "<h2>📝 Kezelés rögzítése - Kaptár: " + hiveId + "</h2>";
-  html += "<p class='hint'>Válaszd ki a kategóriát (kesztyűbarát mód):</p>";
+  html += "<p class='hint'>Adatok betöltése a szerverről...</p>";
+  html += "<div id='treatment-root'></div>";
 
   html += "<script>"
           "function toggleCat(id) {"
@@ -224,37 +277,49 @@ void handleTreatment() {
           "  all.forEach(s => { if(s.id !== id) s.style.display = 'none'; });"
           "  el.style.display = (el.style.display === 'block') ? 'none' : 'block';"
           "}"
+          
+          "fetch('/api/treatments')"
+          "  .then(r => r.json())"
+          "  .then(data => {"
+          "    let root = document.getElementById('treatment-root');"
+          "    root.innerHTML = '';"
+          "    if (!data.categories) return;"
+          "    data.categories.forEach(cat => {"
+          "      let btn = document.createElement('button');"
+          "      btn.className = 'cat-btn';"
+          "      btn.innerHTML = cat.name + ' ▾';"
+          "      btn.onclick = function() { toggleCat('cat-' + cat.id); };"
+          "      root.appendChild(btn);"
+          
+          "      let list = document.createElement('div');"
+          "      list.id = 'cat-' + cat.id;"
+          "      list.className = 'sub-list';"
+          
+          "      cat.items.forEach(item => {"
+          "        let sBtn = document.createElement('button');"
+          "        sBtn.className = 'sub-btn';"
+          "        sBtn.innerText = item.label;"
+          "        if (item.label.includes('Hans')) sBtn.style.cssText = 'border-color:#ef4444; color:#ef4444;';"
+          
+          "        sBtn.onclick = function() {"
+          "          if (item.type === 'prompt') {"
+          "            let v = prompt(item.title, item.default);"
+          "            if (v) { alert('Mentve: ' + item.label + ' - ' + v + ' ' + item.unit); location.href='/hive?hive=" + hiveId + "'; }"
+          "          } else if (item.type === 'confirm') {"
+          "            if (confirm(item.confirmText)) { alert(item.text); location.href='/hive?hive=" + hiveId + "'; }"
+          "          } else {"
+          "            alert('Mentve: ' + item.text);"
+          "            location.href='/hive?hive=" + hiveId + "';"
+          "          }"
+          "        };"
+          "        list.appendChild(sBtn);"
+          "      });"
+          "      root.appendChild(list);"
+          "    });"
+          "  }).catch(e => {"
+          "    document.getElementById('treatment-root').innerHTML = '<div class=\'msg err\'>Hiba a kezelések betöltésekor.</div>';"
+          "  });"
           "</script>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-feeding')\">🍯 Etetés ▾</button>";
-  html += "<div id='cat-feeding' class='sub-list'>";
-  html += "<button class='sub-btn' onclick=\"let v=prompt('Szirup mennyisége (l):','1'); if(v) { alert('Mentve: Szirup - ' + v + ' l'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Szirup (l)</button>";
-  html += "<button class='sub-btn' onclick=\"let v=prompt('Cukorlepény mennyisége (kg):','1'); if(v) { alert('Mentve: Cukorlepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Cukorlepény (kg)</button>";
-  html += "<button class='sub-btn' onclick=\"let v=prompt('Fehérjés lepény mennyisége (kg):','1'); if(v) { alert('Mentve: Fehérjés lepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Fehérjés lepény (kg)</button>";
-  html += "<button class='sub-btn' onclick=\"let v=prompt('Gyógyszeres lepény mennyisége (kg):','1'); if(v) { alert('Mentve: Gyógyszeres lepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Gyógyszeres lepény (kg)</button>";
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-medical')\">💊 Gyógykezelés ▾</button>";
-  html += "<div id='cat-medical' class='sub-list'>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Nosevit'); location.href='/hive?hive=" + hiveId + "';\">🐝 Nosevit</button>";
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-mites')\">🛡️ Atkairtás ▾</button>";
-  html += "<div id='cat-mites' class='sub-list'>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Tartós hordozó'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Tartós hordozó</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Spriccelés'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Spriccelés</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Szublimálás'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Szublimálás</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Hangyasav'); location.href='/hive?hive=" + hiveId + "';\">🐝 Hangyasav</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Illóolaj'); location.href='/hive?hive=" + hiveId + "';\">🐝 Egyéb: Illóolaj</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Heresejt-kivágás'); location.href='/hive?hive=" + hiveId + "';\">🐝 Egyéb: Heresejt-kivágás</button>";
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-other')\">⚙️ Egyéb / Beavatkozások ▾</button>";
-  html += "<div id='cat-other' class='sub-list'>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Anyacsere'); location.href='/hive?hive=" + hiveId + "';\">🐝 Anyacsere</button>";
-  html += "<button class='sub-btn' onclick=\"alert('Mentve: Család felszámolása'); location.href='/hive?hive=" + hiveId + "';\">🐝 Család felszámolása</button>";
-  html += "<button class='sub-btn' style='border-color:#ef4444; color:#ef4444;' onclick=\"if(confirm('🔥 BIZTOSAN végrehajtod a Hans protokollt?')) { alert('🔥 Hans protokoll végrehajtva!'); location.href='/hive?hive=" + hiveId + "'; }\">🔥 Hans (Biztos igen/nem)</button>";
-  html += "</div>";
 
   html += "<button class='sec' style='margin-top:20px; padding:16px; font-size:16px; width:100%;' onclick=\"location.href='/hive?hive=" + hiveId + "'\">⬅ Vissza a kaptárhoz</button>";
   html += "</div>";
@@ -308,6 +373,26 @@ void handleEvaluatePost() {
   server.send(302, "text/plain", "");
 }
 
+void handleGetEvaluationsJson() {
+  Serial.println("[EVALUATIONS] /api/evaluations vegpont meghivva...");
+  if (!LittleFS.exists("/evaluation.json")) {
+    Serial.println("[EVALUATIONS] HIBA: A /evaluation.json fajl nem talalhato a LittleFS-en!");
+    server.send(404, "application/json", "{\"error\":\"evaluation.json not found\"}");
+    return;
+  }
+  
+  File f = LittleFS.open("/evaluation.json", "r");
+  if (!f) {
+    Serial.println("[EVALUATIONS] HIBA: A fajl megnyitasa olvasasra sikertelen!");
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  Serial.println("[EVALUATIONS] Siker: evaluation.json tovabbitasa a kliensnek.");
+  server.streamFile(f, "application/json");
+  f.close();
+}
+
 void handleEvaluation() {
   if (!checkPinGuard()) return;
   String hiveId = server.hasArg("hive") ? server.arg("hive") : "A1B2";
@@ -330,7 +415,8 @@ void handleEvaluation() {
 
   html += "<div class='card wide eval-container'>";
   html += "<h2>📊 Értékelés - Kaptár: " + hiveId + "</h2>";
-  html += "<p class='hint'>Válaszd ki a kategóriát, majd az értéket (kesztyűbarát mód):</p>";
+  html += "<p class='hint'>Adatok betöltése a szerverről...</p>";
+  html += "<div id='eval-root'></div>";
 
   html += "<script>"
           "function toggleCat(id) {"
@@ -343,55 +429,81 @@ void handleEvaluation() {
           "  alert('Mentve: ' + trait + ' -> ' + val);"
           "  location.href='/hive?hive=" + hiveId + "';"
           "}"
+          
+          "fetch('/api/evaluations')"
+          "  .then(r => r.json())"
+          "  .then(data => {"
+          "    let root = document.getElementById('eval-root');"
+          "    root.innerHTML = '';"
+          "    if (!data.categories) return;"
+          "    data.categories.forEach(cat => {"
+          "      let btn = document.createElement('button');"
+          "      btn.className = 'cat-btn';"
+          "      btn.innerHTML = cat.name + ' ▾';"
+          "      btn.onclick = function() { toggleCat('cat-' + cat.id); };"
+          "      root.appendChild(btn);"
+          
+          "      let list = document.createElement('div');"
+          "      list.id = 'cat-' + cat.id;"
+          "      list.className = 'sub-list';"
+          
+          "      cat.traits.forEach(trait => {"
+          "        let itemDiv = document.createElement('div');"
+          "        itemDiv.className = 'eval-item';"
+          "        itemDiv.innerHTML = '<div class=\"eval-label\">' + trait + '</div>' +"
+          "          '<div class=\"eval-btns\">' +"
+          "            '<button class=\"btn-mm\" onclick=\"saveEval(\\'' + trait + '\\', \\'--\\')\">--</button>' +"
+          "            '<button class=\"btn-m\" onclick=\"saveEval(\\'' + trait + '\\', \\'-\\')\">-</button>' +"
+          "            '<button class=\"btn-p\" onclick=\"saveEval(\\'' + trait + '\\', \\'+\\')\">+</button>' +"
+          "            '<button class=\"btn-pp\" onclick=\"saveEval(\\'' + trait + '\\', \\'++\\')\">++</button>' +"
+          "          '</div>';"
+          "        list.appendChild(itemDiv);"
+          "      });"
+          "      root.appendChild(list);"
+          "    });"
+          "  }).catch(e => {"
+          "    document.getElementById('eval-root').innerHTML = '<div class=\'msg err\'>Hiba az értékelések betöltésekor.</div>';"
+          "  });"
           "</script>";
-
-  auto evalRow = [](String label) -> String {
-      String s = "<div class='eval-item'><div class='eval-label'>" + label + "</div><div class='eval-btns'>";
-      s += "<button class='btn-mm' onclick=\"saveEval('" + label + "', '--')\">--</button>";
-      s += "<button class='btn-m' onclick=\"saveEval('" + label + "', '-')\">-</button>";
-      s += "<button class='btn-p' onclick=\"saveEval('" + label + "', '+')\">+</button>";
-      s += "<button class='btn-pp' onclick=\"saveEval('" + label + "', '++')\">++</button>";
-      s += "</div></div>";
-      return s;
-  };
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-behavior')\">🐝 Viselkedés ▾</button>";
-  html += "<div id='cat-behavior' class='sub-list'>";
-  html += evalRow("Szelíd");
-  html += evalRow("Tisztító");
-  html += evalRow("Építő");
-  html += evalRow("Takarékos");
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-collection')\">🌼 Gyűjtés ▾</button>";
-  html += "<div id='cat-collection' class='sub-list'>";
-  html += evalRow("Méz");
-  html += evalRow("Virágpor");
-  html += evalRow("Propolisz");
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-tendency')\">⚠️ Hajlamok ▾</button>";
-  html += "<div id='cat-tendency' class='sub-list'>";
-  html += evalRow("Rajzási");
-  html += evalRow("Rablási");
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-health')\">🛡️ Egészség ▾</button>";
-  html += "<div id='cat-health' class='sub-list'>";
-  html += evalRow("Betegség ellenállás");
-  html += evalRow("Atka ellenállás");
-  html += "</div>";
-
-  html += "<button class='cat-btn' onclick=\"toggleCat('cat-queen')\">👑 Anya ▾</button>";
-  html += "<div id='cat-queen' class='sub-list'>";
-  html += evalRow("Fiasítás mennyisége");
-  html += evalRow("Fiasítás zártsága");
-  html += evalRow("Megjelenés");
-  html += "</div>";
 
   html += "<button class='sec' style='margin-top:20px; padding:16px; font-size:16px; width:100%;' onclick=\"location.href='/hive?hive=" + hiveId + "'\">⬅ Vissza a kaptárhoz</button>";
   html += "</div>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
+}
+
+void handleGetColonyFunctionsJson() {
+  Serial.println("[COLONY] /api/colony_functions végpont meghívva...");
+  if (!LittleFS.exists("/colony_functions.json")) {
+    Serial.println("[COLONY] HIBA: A /colony_functions.json fájl nem található a LittleFS-en!");
+    server.send(404, "application/json", "{\"error\":\"colony_functions.json not found\"}");
+    return;
+  }
+  
+  File f = LittleFS.open("/colony_functions.json", "r");
+  if (!f) {
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  server.streamFile(f, "application/json");
+  f.close();
+}
+
+void handlePostQueenRearing() {
+  if (!checkPinGuard()) return;
+  
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    // Itt dolgozhatod fel a JSON-t (hive és plan) az ArduinoJson segítségével,
+    // majd küldheted tovább a Supabase-nek POST kérésként.
+    
+    // Példa Supabase REST hívásra (vagy sorba állításra):
+    // POST https://<project>.supabase.co/rest/v1/queen_plans
+    
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+  } else {
+    server.send(400, "application/json", "{\"error\":\"bad request\"}");
+  }
 }

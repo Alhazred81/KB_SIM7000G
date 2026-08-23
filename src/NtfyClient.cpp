@@ -1,7 +1,7 @@
-//ntfyClient.cpp
+// ntfyClient.cpp
 
 #include "NtfyClient.h"
-#include <LittleFS.h>
+#include <Preferences.h>
 
 // Alapértelmezett beállítások
 String gNtfyTopic = "KB_Teszt_20260813_666"; 
@@ -10,19 +10,13 @@ String gNtfyNickname = "";
 bool gNtfyStartupMsg = true;
 
 void loadNtfyConfig() {
-  if (LittleFS.exists("/ntfy.cfg")) {
-    File f = LittleFS.open("/ntfy.cfg", "r");
-    if (f) {
-      gNtfyServer = f.readStringUntil('\n'); gNtfyServer.trim();
-      gNtfyTopic = f.readStringUntil('\n');  gNtfyTopic.trim();
-      gNtfyNickname = f.readStringUntil('\n'); gNtfyNickname.trim();
-      
-      String startStr = f.readStringUntil('\n'); startStr.trim();
-      if (startStr.length() > 0) gNtfyStartupMsg = (startStr == "1");
-      
-      f.close();
-    }
-  }
+  Preferences prefs;
+  prefs.begin("ntfy_cfg", true); // Olvasás mód
+  gNtfyServer = prefs.getString("server", "http://ntfy.sh");
+  gNtfyTopic = prefs.getString("topic", "KB_Teszt_20260813_666");
+  gNtfyNickname = prefs.getString("nickname", "");
+  gNtfyStartupMsg = prefs.getBool("startup", true);
+  prefs.end();
 }
 
 void saveNtfyConfig(const String& server, const String& topic, const String& nickname, bool startupMsg) {
@@ -31,14 +25,13 @@ void saveNtfyConfig(const String& server, const String& topic, const String& nic
   gNtfyNickname = nickname;
   gNtfyStartupMsg = startupMsg;
   
-  File f = LittleFS.open("/ntfy.cfg", "w");
-  if (f) {
-    f.println(gNtfyServer);
-    f.println(gNtfyTopic);
-    f.println(gNtfyNickname);
-    f.println(gNtfyStartupMsg ? "1" : "0");
-    f.close();
-  }
+  Preferences prefs;
+  prefs.begin("ntfy_cfg", false); // Írás mód
+  prefs.putString("server", gNtfyServer);
+  prefs.putString("topic", gNtfyTopic);
+  prefs.putString("nickname", gNtfyNickname);
+  prefs.putBool("startup", gNtfyStartupMsg);
+  prefs.end();
 }
 
 NtfyClient::NtfyClient(Stream& modemStream, const char* defaultTopic, const char* serverAddress)
