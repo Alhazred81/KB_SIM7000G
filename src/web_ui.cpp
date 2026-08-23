@@ -33,6 +33,7 @@ extern void handleSensors();
 extern void handleDiag();
 extern void handleExpert();
 extern void handleHiveView();
+extern void handleGetTreatmentsJson();
 
 extern void handleDoSms();
 extern void handleSmsStatus();
@@ -77,7 +78,7 @@ extern void handleSaveNtfy();
 extern void handleSaveWeatherCfg();
 extern void handleTestWeatherAlert();
 extern void handleMapStatusApi();
-extern void handleEvaluate();
+extern void handleTreatment();
 extern void handleEvaluatePost();
 extern void handleConfig();
 extern void handleConfigPost();
@@ -272,6 +273,7 @@ void webBegin() {
   
   // Végpont regisztrálása a módváltáshoz
   server.on("/setmode", handleSetMode);
+  server.on("/api/treatments", HTTP_GET, handleGetTreatmentsJson);
 
   // GSM végpontok
   server.on("/dosms", HTTP_POST, handleDoSms);
@@ -322,7 +324,7 @@ void webBegin() {
   server.on("/saveweathercfg", HTTP_POST, handleSaveWeatherCfg);
   server.on("/testweatheralert", HTTP_POST, handleTestWeatherAlert);
   server.on("/api/map_status", HTTP_GET, handleMapStatusApi);
-  server.on("/evaluate", handleEvaluate);
+  server.on("/treatment", handleTreatment);
   server.on("/evaluate_post", HTTP_POST, handleEvaluatePost);
   server.on("/config", handleConfig);
   server.on("/config_post", HTTP_POST, handleConfigPost);

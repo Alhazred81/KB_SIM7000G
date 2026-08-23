@@ -1,0 +1,77 @@
+{
+  "version": "2026.08.23-4",
+  "categories": [
+    {
+      "id": "feeding",
+      "name": "Etetés",
+      "options": [
+        {
+          "id": "syrup",
+          "name": "Szirup (l)",
+          "needs_value": true,
+          "unit": "l"
+        },
+        {
+          "id": "sugar_pattie",
+          "name": "Cukorlepény (kg)",
+          "needs_value": true,
+          "unit": "kg"
+        },
+        {
+          "id": "protein_pattie",
+          "name": "Fehérjés lepény (kg)",
+          "needs_value": true,
+          "unit": "kg"
+        },
+        {
+          "id": "medicated_pattie",
+          "name": "Gyógyszeres lepény (kg)",
+          "needs_value": true,
+          "unit": "kg"
+        }
+      ]
+    },
+    {
+      "id": "medical",
+      "name": "Gyógykezelés",
+      "options": [{ "id": "nosevit", "name": "Nosevit" }]
+    },
+    {
+      "id": "mite_control",
+      "name": "Atkairtás",
+      "options": [
+        {
+          "id": "oxalic_acid",
+          "name": "Oxálsav",
+          "sub_options": [
+            { "id": "extended_carrier", "name": "Tartós hordozó" },
+            { "id": "spraying", "name": "Spriccelés" },
+            { "id": "sublimation", "name": "Szublimálás" }
+          ]
+        },
+        { "id": "formic_acid", "name": "Hangyasav" },
+        {
+          "id": "other_mite",
+          "name": "Egyéb",
+          "sub_options": [
+            { "id": "essential_oils", "name": "Illóolaj" },
+            { "id": "drone_brood_removal", "name": "Heresejt-kivágás" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other_actions",
+      "name": "Egyéb",
+      "options": [
+        { "id": "queen_replacement", "name": "Anyacsere" },
+        { "id": "family_liquidation", "name": "Család felszámolása" },
+        {
+          "id": "hans_protocol",
+          "name": "🔥 Hans (biztos igen/nem)",
+          "confirm_hans": true
+        }
+      ]
+    }
+  ]
+}

@@ -74,9 +74,11 @@ void handleHiveView() {
           ".box-square { aspect-ratio: 1 / 1; }"
           ".box-ratio-23 { aspect-ratio: 3 / 2; }"
           ".alert-banner { padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 16px; font-size: 15px; }"
-          ".hans-meme  { width: 100%; max-height: 200px; object-fit: cover; border-radius: 8px; margin-bottom: 14px; border: 2px solid #ef4444; }"
           
-          /* Biztosított háttérszínek a dobozokhoz */
+          /* FIXÁLT HANS MÉM KÉP */
+          ".hans-meme-container { width: 100%; text-align: center; margin-bottom: 14px; }"
+          ".hans-meme  { width: 100%; max-width: 380px; height: auto; max-height: 200px; object-fit: contain; border-radius: 8px; border: 2px solid #ef4444; display: inline-block; }"
+          
           ".b-grn   { background: rgba(34,197,94,0.3); color: #22c55e; border: 2px solid #22c55e; }"
           ".b-yell  { background: rgba(234,179,8,0.3); color: #eab308; border: 2px solid #eab308; }"
           ".b-org   { background: rgba(249,115,22,0.3); color: #f97316; border: 2px solid #f97316; }"
@@ -107,7 +109,7 @@ void handleHiveView() {
 
   if (isHans) {
     html += "<div class='alert-banner " + boxClass + "'>🔥 HANS KRITIKUS ÁLLAPOT! 🔥</div>";
-    html += "<img src='hans.png' class='hans-meme' alt='Hans'>";
+    html += "<div class='hans-meme-container'><img src='hans.png' class='hans-meme' alt='Hans'></div>";
   } else {
     html += "<div class='alert-banner " + boxClass + "'>Státusz: " + interventionText + "</div>";
   }
@@ -125,7 +127,7 @@ void handleHiveView() {
   html += "</div>";
 
   html += "<div style='display:flex; gap:10px;'>";
-  html += "<button class='warn' style='flex:1; padding:14px; font-size:16px;' onclick=\"location.href='/evaluate?hive=" + hiveId + "'\">📝 Kezelés</button>";
+  html += "<button class='warn' style='flex:1; padding:14px; font-size:16px;' onclick=\"location.href='/treatment?hive=" + hiveId + "'\">📝 Kezelés</button>";
   html += "<button class='sec' style='flex:1; padding:14px; font-size:16px;' onclick=\"location.href='/config?hive=" + hiveId + "'\">⚙️ Konfig</button>";
   html += "</div>";
 
@@ -150,7 +152,6 @@ void handleHiveView() {
   server.send(200, "text/html", html);
 }
 
-// Segédfüggvények a Linker hibák elkerülésére
 void handleNfc() {
   if (!checkPinGuard()) return;
   String html = htmlHead("NFC Olvasás", "1");
@@ -190,14 +191,73 @@ void handleMapStatusApi() {
   server.send(200, "application/json", json);
 }
 
-void handleEvaluate() {
+void handleTreatment() {
   if (!checkPinGuard()) return;
-  server.send(200, "text/html", htmlHead("Értékelés", "9") + "<div class='card wide'><h2>Kezelés / Értékelés rögzítése</h2><p>Még fejlesztés alatt.</p></div>" + htmlFoot());
-}
+  String hiveId = server.hasArg("hive") ? server.arg("hive") : "A1B2";
 
-void handleEvaluatePost() {
-  server.sendHeader("Location", "/hives", true);
-  server.send(302, "text/plain", "");
+  String html = htmlHead("Kezelés rögzítése: " + hiveId, "11");
+
+  html += "<style>"
+          ".treatment-container { max-width: 600px; margin: 0 auto; }"
+          ".cat-btn { display: block; width: 100%; padding: 18px; margin-bottom: 12px; font-size: 18px; font-weight: bold; text-align: left; border-radius: 12px; cursor: pointer; background: var(--card); color: var(--txt); border: 2px solid var(--border); transition: 0.2s; }"
+          ".cat-btn:hover { background: var(--border); border-color: var(--accent); }"
+          ".sub-list { display: none; padding: 8px 0 12px 15px; margin-bottom: 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,0.02); border-radius: 0 8px 8px 0; }"
+          ".sub-btn { display: block; width: 100%; padding: 14px; margin-top: 8px; font-size: 16px; font-weight: bold; text-align: left; border-radius: 8px; cursor: pointer; background: #141428; color: var(--txt); border: 1px solid var(--border); }"
+          ".sub-btn:hover { background: var(--border); border-color: var(--accent); }"
+          "</style>";
+
+  html += "<div class='card wide treatment-container'>";
+  html += "<h2>📝 Kezelés rögzítése - Kaptár: " + hiveId + "</h2>";
+  html += "<p class='hint'>Válaszd ki a kategóriát (kesztyűbarát mód):</p>";
+
+  html += "<script>"
+          "function toggleCat(id) {"
+          "  let el = document.getElementById(id);"
+          "  let all = document.querySelectorAll('.sub-list');"
+          "  all.forEach(s => { if(s.id !== id) s.style.display = 'none'; });"
+          "  el.style.display = (el.style.display === 'block') ? 'none' : 'block';"
+          "}"
+          "</script>";
+
+  // 1. ETETÉS KATEGÓRIA
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-feeding')\">🍯 Etetés ▾</button>";
+  html += "<div id='cat-feeding' class='sub-list'>";
+  html += "<button class='sub-btn' onclick=\"let v=prompt('Szirup mennyisége (l):','1'); if(v) { alert('Mentve: Szirup - ' + v + ' l'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Szirup (l)</button>";
+  html += "<button class='sub-btn' onclick=\"let v=prompt('Cukorlepény mennyisége (kg):','1'); if(v) { alert('Mentve: Cukorlepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Cukorlepény (kg)</button>";
+  html += "<button class='sub-btn' onclick=\"let v=prompt('Fehérjés lepény mennyisége (kg):','1'); if(v) { alert('Mentve: Fehérjés lepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Fehérjés lepény (kg)</button>";
+  html += "<button class='sub-btn' onclick=\"let v=prompt('Gyógyszeres lepény mennyisége (kg):','1'); if(v) { alert('Mentve: Gyógyszeres lepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Gyógyszeres lepény (kg)</button>";
+  html += "</div>";
+
+  // 2. GYÓGYKEZELÉS KATEGÓRIA
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-medical')\">💊 Gyógykezelés ▾</button>";
+  html += "<div id='cat-medical' class='sub-list'>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Nosevit'); location.href='/hive?hive=" + hiveId + "';\">🐝 Nosevit</button>";
+  html += "</div>";
+
+  // 3. ATKAIRTÁS KATEGÓRIA
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-mites')\">🛡️ Atkairtás ▾</button>";
+  html += "<div id='cat-mites' class='sub-list'>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Tartós hordozó'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Tartós hordozó</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Spriccelés'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Spriccelés</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Szublimálás'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Szublimálás</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Hangyasav'); location.href='/hive?hive=" + hiveId + "';\">🐝 Hangyasav</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Illóolaj'); location.href='/hive?hive=" + hiveId + "';\">🐝 Egyéb: Illóolaj</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Heresejt-kivágás'); location.href='/hive?hive=" + hiveId + "';\">🐝 Egyéb: Heresejt-kivágás</button>";
+  html += "</div>";
+
+  // 4. EGYÉB KATEGÓRIA
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-other')\">⚙️ Egyéb / Beavatkozások ▾</button>";
+  html += "<div id='cat-other' class='sub-list'>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Anyacsere'); location.href='/hive?hive=" + hiveId + "';\">🐝 Anyacsere</button>";
+  html += "<button class='sub-btn' onclick=\"alert('Mentve: Család felszámolása'); location.href='/hive?hive=" + hiveId + "';\">🐝 Család felszámolása</button>";
+  html += "<button class='sub-btn' style='border-color:#ef4444; color:#ef4444;' onclick=\"if(confirm('🔥 BIZTOSAN végrehajtod a Hans protokollt?')) { alert('🔥 Hans protokoll végrehajtva!'); location.href='/hive?hive=" + hiveId + "'; }\">🔥 Hans (Biztos igen/nem)</button>";
+  html += "</div>";
+
+  html += "<button class='sec' style='margin-top:20px; padding:16px; font-size:16px; width:100%;' onclick=\"location.href='/hive?hive=" + hiveId + "'\">⬅ Vissza a kaptárhoz</button>";
+  html += "</div>";
+
+  html += htmlFoot();
+  server.send(200, "text/html", html);
 }
 
 void handleConfig() {
@@ -216,6 +276,31 @@ void handleRegisterPart() {
 }
 
 void handleRegisterPartPost() {
+  server.sendHeader("Location", "/hives", true);
+  server.send(302, "text/plain", "");
+}
+
+void handleGetTreatmentsJson() {
+  Serial.println("[TREATMENTS] /api/treatments vegpont meghivva...");
+  if (!LittleFS.exists("/treatment.json")) {
+    Serial.println("[TREATMENTS] HIBA: A /treatment.json fajl nem talalhato a LittleFS-en!");
+    server.send(404, "application/json", "{\"error\":\"treatment.json not found\"}");
+    return;
+  }
+  
+  File f = LittleFS.open("/treatment.json", "r");
+  if (!f) {
+    Serial.println("[TREATMENTS] HIBA: A fajl megnyitasa olvasasra sikertelen!");
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  Serial.println("[TREATMENTS] Siker: treatment.json tovabbitasa a kliensnek.");
+  server.streamFile(f, "application/json");
+  f.close();
+}
+
+void handleEvaluatePost() {
   server.sendHeader("Location", "/hives", true);
   server.send(302, "text/plain", "");
 }

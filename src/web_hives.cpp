@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WebServer.h>
+#include <LittleFS.h>
 #include "web_hives.h"
 #include "web_common.h"
 
@@ -143,3 +144,4 @@ void handleHives() {
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
+
