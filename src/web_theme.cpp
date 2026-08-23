@@ -1,5 +1,3 @@
-//web_theme.cpp
-
 #include "web_theme.h"
 #include "web_common.h"
 #include <Arduino.h>
@@ -8,24 +6,38 @@
 extern WebServer server;
 extern String macSuffix();
 
+// Behúzzuk a globális változót a módváltáshoz
+extern bool gFieldMode;
+
 // ─── HTML Fejléc és Navigációs menü ───────────────────────────
 String htmlHead(const String& title, const String& activeTab) {
   String s = "<!DOCTYPE html><html lang='hu'><head><meta charset='utf-8'>";
   s += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   s += "<title>" + title + "</title>";
+  
+  // Íme az on-the-fly méhecske favicon! (Nincs szükség külön fájlra)
+  s += "<link rel='icon' href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>\">";
+  
   s += "<link rel='stylesheet' href='/s.css'>";
   s += "</head><body>";
   s += "<nav>";
+  
+  // ─── Alapvető fülek (Terep módban és Setup módban is látszanak) ───
   s += "<a href='/'" + String(activeTab=="1"?" class='on'":"") + ">🏠 Főoldal</a>";
   s += "<a href='/hives'" + String(activeTab=="9"?" class='on'":"") + ">🗺 Kaptárak</a>";
-  s += "<a href='/hive'" + String(activeTab=="11"?" class='on'":"") + ">🐝 Kaptár</a>"; // <-- Itt az új fül
-  s += "<a href='/gsm'" + String(activeTab=="2"?" class='on'":"") + ">📱 GSM</a>";
-  s += "<a href='/iot'" + String(activeTab=="3"?" class='on'":"") + ">🌐 IoT</a>";
-  s += "<a href='/gnss'" + String(activeTab=="6"?" class='on'":"") + ">🛰 GNSS</a>";
-  s += "<a href='/sensors'" + String(activeTab=="7"?" class='on'":"") + ">🌡 Szenzor</a>";
-  s += "<a href='/cfg'" + String(activeTab=="4"?" class='on'":"") + ">⚙ Konfig</a>";
-  s += "<a href='/expert'" + String(activeTab=="8"?" class='on'":"") + ">⚠️ Expert</a>";
-  s += "<a href='/diag'" + String(activeTab=="5"?" class='on'":"") + ">🩺 Diag</a>";
+  s += "<a href='/hive'" + String(activeTab=="11"?" class='on'":"") + ">🐝 Kaptár</a>";
+
+  // ─── Haladó fülek (Csak Setup módban látszanak) ───
+  if (!gFieldMode) {
+    s += "<a href='/gsm'" + String(activeTab=="2"?" class='on'":"") + ">📱 GSM</a>";
+    s += "<a href='/iot'" + String(activeTab=="3"?" class='on'":"") + ">🌐 IoT</a>";
+    s += "<a href='/gnss'" + String(activeTab=="6"?" class='on'":"") + ">🛰 GNSS</a>";
+    s += "<a href='/sensors'" + String(activeTab=="7"?" class='on'":"") + ">🌡 Szenzor</a>";
+    s += "<a href='/cfg'" + String(activeTab=="4"?" class='on'":"") + ">⚙ Konfig</a>";
+    s += "<a href='/expert'" + String(activeTab=="8"?" class='on'":"") + ">⚠️ Expert</a>";
+    s += "<a href='/diag'" + String(activeTab=="5"?" class='on'":"") + ">🩺 Diag</a>";
+  }
+
   s += "</nav><div class='wrap'>";
   return s;
 }
@@ -35,7 +47,6 @@ String htmlFoot() {
   return "</div></body></html>";
 }
 
-// ─── CSS Stíluslap (C++ nézetekhez) ───────────────────────────
 // ─── CSS Stíluslap (C++ nézetekhez) ───────────────────────────
 void handleCss() {
   String css = R"css(
@@ -53,7 +64,7 @@ void handleCss() {
     nav a:hover {color:var(--txt)}
     nav a.on {color:var(--accent);border-bottom-color:var(--accent)}
     
-/* Elrendezés (Szigorúan fix méretű Flexbox) */
+    /* Elrendezés (Szigorúan fix méretű Flexbox) */
     .wrap {max-width:1850px;margin:0 auto;padding:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
     h1 {width:100%;font-size:20px;margin-bottom:-4px;color:#fff}
     .card {background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;

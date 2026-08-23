@@ -19,6 +19,9 @@ extern String htmlFoot();
 extern String gApSSID;
 extern void handleNfc();
 
+// --- Globális változó a Setup/Terep módhoz ---
+bool gFieldMode = true;
+
 // --- Külső modulokból származó handler függvények deklarációi ---
 
 extern void handleHives();
@@ -84,33 +87,52 @@ extern void handleWifiScan();
 extern void handleStaConnect();
 extern void handleStaDisconnect();
 
+// --- Módváltó handler ---
+void handleSetMode() {
+  if (!checkPinGuard()) return;
+  if (server.hasArg("m")) {
+    gFieldMode = (server.arg("m") == "field");
+  }
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
+}
+
 // --- Főoldal / Műszerfal nézet ---
 void handleRoot() {
   if (!checkPinGuard()) return;
 
   String html = htmlHead("Főoldal", "1");
 
-  // Brutális CSS felülírás: Szabadítsuk ki a kártyákat a szűk konténerből!
   html += "<style>"
-          "main, .container, #content { max-width: 100% !important; width: 100% !important; padding: 15px !important; box-sizing: border-box !important; }" 
-          ".dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }"
-          ".dot-g { background-color: #22c55e; box-shadow: 0 0 5px rgba(34,197,94,0.6); }"
-          ".dot-y { background-color: #eab308; box-shadow: 0 0 5px rgba(234,179,8,0.6); }"
-          ".dot-r { background-color: #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.6); }"
-          ".compact-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }"
-          
-          /* Flexbox a grid helyett: garantáltan szétterül, ha van hely! */
-          ".dash-grid { display: flex; flex-wrap: wrap; gap: 16px; width: 100%; align-items: stretch; justify-content: flex-start; }"
-          ".dash-grid > .card, .dash-grid > div.card { flex: 1 1 300px; min-width: 260px; max-width: none !important; margin: 0 !important; box-sizing: border-box; display: flex; flex-direction: column; }"
+          ".dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }"
+          ".dot-g { background-color: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,0.6); }"
+          ".dot-y { background-color: #eab308; box-shadow: 0 0 4px rgba(234,179,8,0.6); }"
+          ".dot-r { background-color: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.6); }"
+          ".compact-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12px; }"
+          ".dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; align-items: start; margin-bottom: 16px; }"
+          ".dash-grid > .card { margin: 0 !important; width: 100% !important; box-sizing: border-box; display: flex; flex-direction: column; }"
           "</style>";
 
+  // --- KOMPAKT TEREPMÓD CSÚSZKA ---
+  html += "<div style='width: 100%; display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;'>";
+  html += "<div style='font-size:20px; font-weight:bold; color:#fff;'>Műszerfal</div>";
+  html += "<div style='display:flex; align-items:center; gap:10px; background:var(--card); padding:6px 16px; border-radius:20px; border:1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>";
+  html += "<span style='font-size:13px; font-weight:bold; color:" + String(gFieldMode ? "#22c55e" : "var(--txt2)") + ";'>🌱 Terep</span>";
+  html += "<label class='sens-toggle' style='margin:0; --sens-color:#eab308;'>"; 
+  html += "<input type='checkbox' onchange=\"location.href='/setmode?m='+(this.checked?'setup':'field')\" " + String(!gFieldMode ? "checked" : "") + ">";
+  html += "<span class='slider'></span>";
+  html += "</label>";
+  html += "<span style='font-size:13px; font-weight:bold; color:" + String(!gFieldMode ? "#eab308" : "var(--txt2)") + ";'>⚙️ Setup</span>";
+  html += "</div></div>";
+
+  // --- RÁCS KEZDŐDIK ---
   html += "<div class='dash-grid'>";
 
-  // 1. NFC kártya
-  html += "<div class='card' style='padding:12px;'>";
-  html += "<h2 style='font-size:15px; margin-bottom:8px;'>📱 NFC / RFID</h2>";
-  html += "<div style='flex:1; display:flex; align-items:center;'>";
-  html += "<button class='sec' style='width:100%; padding:10px; font-size:14px;' onclick=\"location.href='/nfc'\">📡 Olvasás</button>";
+  // 1. NFC kártya (Gigantikus méhészkesztyűs gombbal)
+  html += "<div class='card'>";
+  html += "<h2 style='font-size:14px; margin-bottom:8px;'>📱 NFC / RFID</h2>";
+  html += "<div style='flex:1; display:flex; align-items:stretch;'>";
+  html += "<button style='width:100%; min-height:100px; font-size:24px; font-weight:900; background:var(--accent); color:#fff; border:none; border-radius:12px; box-shadow:0 8px 16px rgba(77,77,255,0.3); text-transform:uppercase; letter-spacing:1px; cursor:pointer;' onclick=\"location.href='/nfc'\">📡 Olvasás</button>";
   html += "</div></div>";
 
   // 2. Hálózat & GNSS kártya
@@ -124,33 +146,36 @@ void handleRoot() {
   String fixText = "Nincs";
   if (gGnss.fix) {
     if (gGnss.hdop < 2.5 && gGnss.satUsed >= 5) {
-      fixDot = "dot-g"; fixText = "3D Fix (" + String(gGnss.satUsed) + ")";
+      fixDot = "dot-g"; fixText = "3D (" + String(gGnss.satUsed) + ")";
     } else {
-      fixDot = "dot-y"; fixText = "2D Fix (" + String(gGnss.satUsed) + ")";
+      fixDot = "dot-y"; fixText = "2D (" + String(gGnss.satUsed) + ")";
     }
   }
 
-  html += "<div class='card' style='padding:12px;'>";
-  html += "<h2 style='font-size:15px; margin-bottom:8px;'>📶 Hálózat & GNSS</h2>";
+  html += "<div class='card'>";
+  html += "<h2 style='font-size:14px; margin-bottom:8px;'>📶 Hálózat & GNSS</h2>";
   html += "<div style='flex:1;'>";
   html += "<div class='compact-row'><span><span class='dot " + modemDot + "'></span>Modem</span><b>" + String(gModem.ready ? "Kész" : "Init") + "</b></div>";
-  html += "<div class='compact-row'><span><span class='dot " + gsmDot + "'></span>GSM Hálózat</span><b>" + String(gModem.registered ? "OK" : "Offline") + "</b></div>";
-  html += "<div class='compact-row'><span><span class='dot " + netDot + "'></span>Internet (Adat)</span><b>" + String(gData.active ? "Aktív" : "Inaktív") + "</b></div>";
-  html += "<div class='compact-row'><span><span class='dot " + opDot + "'></span>Szolgáltató</span><b>" + (gModem.registered ? gModem.operatorName : "-") + "</b></div>";
-  html += "<hr style='border:0; border-top:1px solid rgba(255,255,255,0.1); margin:8px 0;'>";
-  html += "<div class='compact-row'><span><span class='dot " + gnssPwrDot + "'></span>GNSS Vevő</span><b>" + String(gGnss.enabled ? "BE" : "KI") + "</b></div>";
-  html += "<div class='compact-row'><span><span class='dot " + fixDot + "'></span>Műholdas Fix</span><b>" + fixText + "</b></div>";
-  html += "<div class='compact-row'><span>HDOP Pontosság</span><b>" + String(gGnss.hdop, 1) + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + gsmDot + "'></span>GSM</span><b>" + String(gModem.registered ? "OK" : "Offline") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + netDot + "'></span>Adat</span><b>" + String(gData.active ? "Aktív" : "Inaktív") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + opDot + "'></span>Opr.</span><b>" + (gModem.registered ? gModem.operatorName : "-") + "</b></div>";
+  html += "<hr style='border:0; border-top:1px solid rgba(255,255,255,0.1); margin:6px 0;'>";
+  html += "<div class='compact-row'><span><span class='dot " + gnssPwrDot + "'></span>GNSS</span><b>" + String(gGnss.enabled ? "BE" : "KI") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + fixDot + "'></span>Fix</span><b>" + fixText + "</b></div>";
+  html += "<div class='compact-row'><span>HDOP</span><b>" + String(gGnss.hdop, 1) + "</b></div>";
   html += "</div>";
-  html += "<div style='display:flex; gap:6px; margin-top:8px;'>";
-  html += "<a href='/gsm' style='flex:1;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>GSM</button></a>";
-  html += "<a href='/gnss' style='flex:1;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>GNSS</button></a>";
-  html += "</div>";
+  
+  if(!gFieldMode) { 
+    html += "<div style='display:flex; gap:6px; margin-top:8px;'>";
+    html += "<a href='/gsm' style='flex:1;'><button class='sec' style='padding:6px; font-size:11px; width:100%;'>GSM</button></a>";
+    html += "<a href='/gnss' style='flex:1;'><button class='sec' style='padding:6px; font-size:11px; width:100%;'>GNSS</button></a>";
+    html += "</div>";
+  }
   html += "</div>";
 
   // 3. Szenzorok kártya
-  html += "<div class='card' style='padding:12px;'>";
-  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🌡 Bekapcsolt Szenzorok</h2>";
+  html += "<div class='card'>";
+  html += "<h2 style='font-size:14px; margin-bottom:8px;'>🌡 Aktív Szenzorok</h2>";
   html += "<div style='flex:1;'>";
 
   int activeCount = 0;
@@ -172,18 +197,20 @@ void handleRoot() {
   addSensRow("Mérleg Dőlés", gMpu.enabled, gMpu.lastGoodRead);
 
   if (activeCount == 0) {
-    html += "<p class='hint' style='margin:4px 0;'>Nincs bekapcsolt szenzor.</p>";
+    html += "<p class='hint' style='margin:4px 0; font-size:12px;'>Nincs bekapcsolt szenzor.</p>";
   }
 
   html += "</div>";
-  html += "<a href='/sensors' style='margin-top:8px;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>Összes szenzor</button></a>";
+  if(!gFieldMode) {
+    html += "<a href='/sensors' style='margin-top:8px;'><button class='sec' style='padding:6px; font-size:11px; width:100%;'>Összes szenzor</button></a>";
+  }
   html += "</div>";
 
   // 4. Időjárás kártya
-  html += "<div class='card' style='padding:12px;'>";
-  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🌤 Időjárás & Előrejelzés</h2>";
-  html += "<div style='font-size:13px; margin-bottom:6px;'><b>Rendszeridő:</b> " + (gTime.synced ? gTime.localTime : "Nincs szinkron") + "</div>";
-  html += "<hr style='border:0; border-top:1px solid var(--border); margin:8px 0;'>";
+  html += "<div class='card'>";
+  html += "<h2 style='font-size:14px; margin-bottom:8px;'>🌤 Időjárás & Előrejelzés</h2>";
+  html += "<div style='font-size:12px; margin-bottom:6px;'><b>Rendszeridő:</b> " + (gTime.synced ? gTime.localTime : "Nincs szinkron") + "</div>";
+  html += "<hr style='border:0; border-top:1px solid var(--border); margin:6px 0;'>";
 
   html += "<div style='flex:1;'>";
   if(gWeatherHasData) {
@@ -205,8 +232,8 @@ void handleRoot() {
         else if (p > 0.5) icon = "🌧️";
         else if (t < 15) icon = "⛅";
         
-        html += "<div style='background:rgba(255,255,255,0.04); padding:4px; border-radius:6px; border:1px solid var(--border);'>"
-                "<div style='font-size:10px; color:var(--txt2);'>" + String(timeSlots[b]) + "</div>"
+        html += "<div style='background:rgba(255,255,255,0.04); padding:4px 2px; border-radius:6px; border:1px solid var(--border);'>"
+                "<div style='font-size:9px; color:var(--txt2);'>" + String(timeSlots[b]) + "</div>"
                 "<div style='font-size:14px; margin:2px 0;'>" + icon + "</div>"
                 "<div>" + String(t, 0) + "°C</div>"
                 "</div>";
@@ -214,9 +241,9 @@ void handleRoot() {
       html += "</div></div>";
     }
     html += "</div>";
-    html += "<p class='hint' style='margin-top:8px; margin-bottom:0;'>Frissítve: " + ageText(gLastWeatherSync) + "</p>";
+    html += "<p class='hint' style='margin-top:8px; margin-bottom:0; font-size:11px;'>Frissítve: " + ageText(gLastWeatherSync) + "</p>";
   } else {
-    html += "<p class='hint' style='margin:0;'>Nincs időjárás adat.</p>";
+    html += "<p class='hint' style='margin:0; font-size:12px;'>Nincs időjárás adat.</p>";
   }
   html += "</div></div>";
 
@@ -242,6 +269,9 @@ void webBegin() {
   server.on("/diag", handleDiag);
   server.on("/expert", handleExpert);
   server.on("/hive", handleHiveView);
+  
+  // Végpont regisztrálása a módváltáshoz
+  server.on("/setmode", handleSetMode);
 
   // GSM végpontok
   server.on("/dosms", HTTP_POST, handleDoSms);
