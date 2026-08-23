@@ -1,5 +1,3 @@
-// web_ui.cpp
-
 #include <Arduino.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -19,10 +17,10 @@ extern WebServer server;
 extern String htmlHead(const String& title, const String& activeTab);
 extern String htmlFoot();
 extern String gApSSID;
+extern void handleNfc();
 
 // --- Külső modulokból származó handler függvények deklarációi ---
 
-// Főoldalak
 extern void handleHives();
 extern void handleCfg();
 extern void handleGsm();
@@ -33,7 +31,6 @@ extern void handleDiag();
 extern void handleExpert();
 extern void handleHiveView();
 
-// GSM modul
 extern void handleDoSms();
 extern void handleSmsStatus();
 extern void handleDoCall();
@@ -43,7 +40,6 @@ extern void handleNetAuto();
 extern void handleNetScan();
 extern void handleNetManual();
 
-// IoT modul
 extern void handleDataOn();
 extern void handleDataOff();
 extern void handleDataPing();
@@ -52,17 +48,14 @@ extern void handleNtfyPoll();
 extern void handleSaveReport();
 extern void handleTestReport();
 
-// Backup modul
 extern void handleEepromBackup();
 extern void handleEepromRestore();
 
-// Szenzor modul
 extern void handleSensConfig();
 extern void handleSensToggle();
 extern void handleSensStatus();
 extern void handleSensTest();
 
-// Diag & Rendszer modul
 extern void handleAtAjax();
 extern void handleAtStatus();
 extern void handleModemStatus();
@@ -72,12 +65,10 @@ extern void handleExpertReset();
 extern void handleExpertFullReset();
 extern void handleEspRestart();
 
-// GNSS modul
 extern void handleGnssStatus();
 extern void handleGnssAssist();
 extern void handleGnssCtl();
 
-// Egyéb
 extern void handleSaveWifi();
 extern void handleSaveNtfy();
 extern void handleSaveWeatherCfg();
@@ -99,111 +90,140 @@ void handleRoot() {
 
   String html = htmlHead("Főoldal", "1");
 
-  // Reszponzív Grid elrendezés a 4 fő kártyának
-  html += "<div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; width:100%; margin-bottom: 16px;'>";
+  // Brutális CSS felülírás: Szabadítsuk ki a kártyákat a szűk konténerből!
+  html += "<style>"
+          "main, .container, #content { max-width: 100% !important; width: 100% !important; padding: 15px !important; box-sizing: border-box !important; }" 
+          ".dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }"
+          ".dot-g { background-color: #22c55e; box-shadow: 0 0 5px rgba(34,197,94,0.6); }"
+          ".dot-y { background-color: #eab308; box-shadow: 0 0 5px rgba(234,179,8,0.6); }"
+          ".dot-r { background-color: #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.6); }"
+          ".compact-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; }"
+          
+          /* Flexbox a grid helyett: garantáltan szétterül, ha van hely! */
+          ".dash-grid { display: flex; flex-wrap: wrap; gap: 16px; width: 100%; align-items: stretch; justify-content: flex-start; }"
+          ".dash-grid > .card, .dash-grid > div.card { flex: 1 1 300px; min-width: 260px; max-width: none !important; margin: 0 !important; box-sizing: border-box; display: flex; flex-direction: column; }"
+          "</style>";
 
-  // 1. GSM / SIM Státusz
-  html += "<div class='card' style='margin:0; height:100%; display:flex; flex-direction:column;'>";
-  html += "<h2>📶 GSM & SIM Státusz</h2>";
-  html += "<div style='flex:1;'>";
-  html += stateRow("Modem", gModem.ready ? "Kész" : "Inicializálás...", gModem.ready ? "g" : "y");
-  html += stateRow("Hálózat", gModem.registered ? "Csatlakozva" : "Keresés / Offline", gModem.registered ? "g" : "r");
-  if(gModem.registered) {
-    html += stateRow("Operátor", gModem.operatorName, "");
-    html += stateRow("Térerő", String(gModem.signalQuality) + " / 31", gModem.signalQuality > 10 ? "g" : "y");
-    html += stateRow("Adatkapcsolat", gData.active ? "Aktív" : "Inaktív", gData.active ? "g" : "y");
-  }
-  html += "</div>";
-  html += "<a href='/gsm' style='margin-top:auto;'><button class='sec'>Részletek</button></a>";
-  html += "</div>";
+  html += "<div class='dash-grid'>";
 
-  // 2. GNSS Státusz
-  html += "<div class='card' style='margin:0; height:100%; display:flex; flex-direction:column;'>";
-  html += "<h2>🛰 GNSS Státusz</h2>";
-  html += "<div style='flex:1;'>";
-  html += stateRow("Vevő modul", gGnss.enabled ? "Bekapcsolva" : "Kikapcsolva", gGnss.enabled ? "g" : "r");
-  if(gGnss.enabled) {
-    html += stateRow("Műholdas Fix", gGnss.fix ? "Van (3D)" : "Keresés...", gGnss.fix ? "g" : "y");
-    if(gGnss.fix) {
-      html += stateRow("Használt Műholdak", String(gGnss.satUsed) + " db", "g");
-      html += stateRow("HDOP (Pontosság)", String(gGnss.hdop, 1), gGnss.hdop < 2.5 ? "g" : "y");
+  // 1. NFC kártya
+  html += "<div class='card' style='padding:12px;'>";
+  html += "<h2 style='font-size:15px; margin-bottom:8px;'>📱 NFC / RFID</h2>";
+  html += "<div style='flex:1; display:flex; align-items:center;'>";
+  html += "<button class='sec' style='width:100%; padding:10px; font-size:14px;' onclick=\"location.href='/nfc'\">📡 Olvasás</button>";
+  html += "</div></div>";
+
+  // 2. Hálózat & GNSS kártya
+  String modemDot = gModem.ready ? "dot-g" : "dot-r";
+  String gsmDot = gModem.registered ? "dot-g" : "dot-r";
+  String netDot = gData.active ? "dot-g" : "dot-y";
+  String opDot = gModem.registered ? "dot-g" : "dot-r";
+
+  String gnssPwrDot = gGnss.enabled ? "dot-g" : "dot-r";
+  String fixDot = "dot-r";
+  String fixText = "Nincs";
+  if (gGnss.fix) {
+    if (gGnss.hdop < 2.5 && gGnss.satUsed >= 5) {
+      fixDot = "dot-g"; fixText = "3D Fix (" + String(gGnss.satUsed) + ")";
+    } else {
+      fixDot = "dot-y"; fixText = "2D Fix (" + String(gGnss.satUsed) + ")";
     }
   }
-  html += "</div>";
-  html += "<a href='/gnss' style='margin-top:auto;'><button class='sec'>Részletek</button></a>";
-  html += "</div>";
 
-  // 3. Szenzorok (Kompakt)
-  html += "<div class='card' style='margin:0; height:100%; display:flex; flex-direction:column;'>";
-  html += "<h2>🌡 Elérhető Szenzorok</h2>";
+  html += "<div class='card' style='padding:12px;'>";
+  html += "<h2 style='font-size:15px; margin-bottom:8px;'>📶 Hálózat & GNSS</h2>";
   html += "<div style='flex:1;'>";
-  bool anySensor = false;
-  
-  if(gSht.enabled && gSht.lastGoodRead > 0) {
-    html += stateRow("Belső Hő/Pára", String(gSht.tempC, 1) + " °C | " + String(gSht.humidityPct, 0) + " %", "g");
-    anySensor = true;
-  }
-  if(gWindSpeed.enabled && gWindSpeed.lastGoodRead > 0) {
-    html += stateRow("Szélsebesség", String(gWindSpeed.speedMs, 1) + " m/s", "g");
-    anySensor = true;
-  }
-  if(gWindDir.enabled && gWindDir.lastGoodRead > 0) {
-    html += stateRow("Szélirány", String(gWindDir.directionDeg, 0) + "°", "g");
-    anySensor = true;
-  }
-  if(gRain.enabled && gRain.lastPoll > 0) {
-    html += stateRow("Csapadék", String(gRain.percentWet) + " % " + (gRain.isRaining ? "(Esik)" : ""), gRain.isRaining ? "y" : "g");
-    anySensor = true;
-  }
-  if(gAhtBmp.enabled && gAhtBmp.lastGoodRead > 0) {
-    String t = gAhtBmp.ahtOk ? (String(gAhtBmp.ahtTempC, 1) + " °C") : "N/A";
-    String p = gAhtBmp.bmpOk ? (String(gAhtBmp.bmpPressureHpa, 0) + " hPa") : "N/A";
-    html += stateRow("Külső Hő/Légnyom.", t + " | " + p, "g");
-    anySensor = true;
-  }
-  if(gLtr.enabled && gLtr.lastGoodRead > 0) {
-    html += stateRow("UV Index", String(gLtr.uvIndex, 1), "g");
-    anySensor = true;
-  }
-  if(gMpu.enabled && gMpu.lastGoodRead > 0) {
-    html += stateRow("Mérleg Dőlés", "Aktív", "g");
-    anySensor = true;
-  }
-  if(!anySensor) {
-    html += "<p class='hint' style='margin-top:10px;'>Nincs aktív vagy friss szenzor adat.</p>";
-  }
+  html += "<div class='compact-row'><span><span class='dot " + modemDot + "'></span>Modem</span><b>" + String(gModem.ready ? "Kész" : "Init") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + gsmDot + "'></span>GSM Hálózat</span><b>" + String(gModem.registered ? "OK" : "Offline") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + netDot + "'></span>Internet (Adat)</span><b>" + String(gData.active ? "Aktív" : "Inaktív") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + opDot + "'></span>Szolgáltató</span><b>" + (gModem.registered ? gModem.operatorName : "-") + "</b></div>";
+  html += "<hr style='border:0; border-top:1px solid rgba(255,255,255,0.1); margin:8px 0;'>";
+  html += "<div class='compact-row'><span><span class='dot " + gnssPwrDot + "'></span>GNSS Vevő</span><b>" + String(gGnss.enabled ? "BE" : "KI") + "</b></div>";
+  html += "<div class='compact-row'><span><span class='dot " + fixDot + "'></span>Műholdas Fix</span><b>" + fixText + "</b></div>";
+  html += "<div class='compact-row'><span>HDOP Pontosság</span><b>" + String(gGnss.hdop, 1) + "</b></div>";
   html += "</div>";
-  html += "<a href='/sensors' style='margin-top:auto;'><button class='sec'>Összes szenzor</button></a>";
+  html += "<div style='display:flex; gap:6px; margin-top:8px;'>";
+  html += "<a href='/gsm' style='flex:1;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>GSM</button></a>";
+  html += "<a href='/gnss' style='flex:1;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>GNSS</button></a>";
+  html += "</div>";
   html += "</div>";
 
-  // 4. Időjárás és Naptár
-  html += "<div class='card' style='margin:0; height:100%; display:flex; flex-direction:column;'>";
-  html += "<h2>🌤 Időjárás & Rendszeridő</h2>";
+  // 3. Szenzorok kártya
+  html += "<div class='card' style='padding:12px;'>";
+  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🌡 Bekapcsolt Szenzorok</h2>";
   html += "<div style='flex:1;'>";
-  
-  html += stateRow("Rendszeridő", gTime.synced ? gTime.localTime : "Nincs szinkron", gTime.synced ? "g" : "r");
-  html += "<hr style='border:0; border-top:1px solid var(--border); margin:12px 0;'>";
 
+  int activeCount = 0;
+  auto addSensRow = [&](String name, bool enabled, unsigned long lastRead) {
+    if (!enabled) return;
+    activeCount++;
+    String dot = "dot-g";
+    String val = "OK";
+    if (lastRead == 0) { dot = "dot-y"; val = "Nincs adat"; }
+    html += "<div class='compact-row'><span><span class='dot " + dot + "'></span>" + name + "</span><b>" + val + "</b></div>";
+  };
+
+  addSensRow("Belső Hő/Pára", gSht.enabled, gSht.lastGoodRead);
+  addSensRow("Szélsebesség", gWindSpeed.enabled, gWindSpeed.lastGoodRead);
+  addSensRow("Szélirány", gWindDir.enabled, gWindDir.lastGoodRead);
+  addSensRow("Csapadék", gRain.enabled, gRain.lastPoll);
+  addSensRow("Külső Hő/Nyomás", gAhtBmp.enabled, gAhtBmp.lastGoodRead);
+  addSensRow("UV Index", gLtr.enabled, gLtr.lastGoodRead);
+  addSensRow("Mérleg Dőlés", gMpu.enabled, gMpu.lastGoodRead);
+
+  if (activeCount == 0) {
+    html += "<p class='hint' style='margin:4px 0;'>Nincs bekapcsolt szenzor.</p>";
+  }
+
+  html += "</div>";
+  html += "<a href='/sensors' style='margin-top:8px;'><button class='sec' style='padding:6px; font-size:12px; width:100%;'>Összes szenzor</button></a>";
+  html += "</div>";
+
+  // 4. Időjárás kártya
+  html += "<div class='card' style='padding:12px;'>";
+  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🌤 Időjárás & Előrejelzés</h2>";
+  html += "<div style='font-size:13px; margin-bottom:6px;'><b>Rendszeridő:</b> " + (gTime.synced ? gTime.localTime : "Nincs szinkron") + "</div>";
+  html += "<hr style='border:0; border-top:1px solid var(--border); margin:8px 0;'>";
+
+  html += "<div style='flex:1;'>";
   if(gWeatherHasData) {
-    float dayMin = 99.0, dayMax = -99.0, dayPrecip = 0.0;
-    for(int b=0; b<4; b++) {
-      if(gForecast[0].blocks[b].tempMin < dayMin) dayMin = gForecast[0].blocks[b].tempMin;
-      if(gForecast[0].blocks[b].tempMax > dayMax) dayMax = gForecast[0].blocks[b].tempMax;
-      dayPrecip += gForecast[0].blocks[b].precip;
+    const char* dayNames[] = {"Ma", "Holnap", "Holnapután"};
+    const char* timeSlots[] = {"00-06", "06-12", "12-18", "18-24"};
+    
+    html += "<div style='display:flex; flex-direction:column; gap:8px;'>";
+    for(int d = 0; d < 3; d++) {
+      html += "<div>";
+      html += "<div style='font-weight:bold; color:var(--accent); font-size:12px; margin-bottom:4px;'>" + String(dayNames[d]) + "</div>";
+      html += "<div style='display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; text-align:center; font-size:11px;'>";
+      for(int b = 0; b < 4; b++) {
+        float t = (gForecast[d].blocks[b].tempMin + gForecast[d].blocks[b].tempMax) / 2.0;
+        float p = gForecast[d].blocks[b].precip;
+        
+        String icon = "☀️";
+        if (p > 15.0) icon = "🧊";
+        else if (p > 5.0) icon = "⚡";
+        else if (p > 0.5) icon = "🌧️";
+        else if (t < 15) icon = "⛅";
+        
+        html += "<div style='background:rgba(255,255,255,0.04); padding:4px; border-radius:6px; border:1px solid var(--border);'>"
+                "<div style='font-size:10px; color:var(--txt2);'>" + String(timeSlots[b]) + "</div>"
+                "<div style='font-size:14px; margin:2px 0;'>" + icon + "</div>"
+                "<div>" + String(t, 0) + "°C</div>"
+                "</div>";
+      }
+      html += "</div></div>";
     }
-    html += stateRow("Mai Időjárás", String(dayMin, 1) + "°C - " + String(dayMax, 1) + "°C", "");
-    html += stateRow("Csapadék (Ma)", String(dayPrecip, 1) + " mm", dayPrecip > 0.0 ? "y" : "");
-    html += stateRow("Előrejelzés állapota", ageText(gLastWeatherSync) + " frissítve", "dim");
+    html += "</div>";
+    html += "<p class='hint' style='margin-top:8px; margin-bottom:0;'>Frissítve: " + ageText(gLastWeatherSync) + "</p>";
   } else {
-    html += "<p class='hint'>Nincs időjárás adat. Várakozás GPS fixre és időre...</p>";
+    html += "<p class='hint' style='margin:0;'>Nincs időjárás adat.</p>";
   }
-  html += "</div>";
-  html += "</div>"; // Kártya vége
+  html += "</div></div>";
 
-  html += "</div>"; // Grid vége
-
-  // Naptár nézet beszúrása alulra
+  // 5. Naptár
   html += getCalendarCardHtml();
+
+  html += "</div>"; // dash-grid vége
 
   html += htmlFoot();
   server.send(200, "text/html", html);
@@ -241,7 +261,7 @@ void webBegin() {
   server.on("/ntfy-poll", HTTP_POST, handleNtfyPoll);
   server.on("/save-report", HTTP_POST, handleSaveReport);
   server.on("/test-report", HTTP_POST, handleTestReport);
-  server.on("/eeprombackup", handleEepromBackup);
+  server.on("/eeprombackup", HTTP_POST, handleEepromBackup);
   server.on("/eepromrestore", HTTP_POST, handleEepromRestore);
 
   // Szenzor kapcsolók és teszt végpontok
@@ -256,7 +276,7 @@ void webBegin() {
   server.on("/modemstatus", handleModemStatus);
   server.on("/reinit", HTTP_POST, handleReinit);
   server.on("/expertpost", HTTP_POST, handleExpertPost);
-  server.on("/expertreset", handleExpertReset);
+  server.on("/expertreset", HTTP_POST, handleExpertReset);
   server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
   server.on("/esprestart", HTTP_POST, handleEspRestart);
 
@@ -266,6 +286,7 @@ void webBegin() {
   server.on("/gnssctl", HTTP_POST, handleGnssCtl);
 
   // Egyéb funkciók
+  server.on("/nfc", handleNfc);
   server.on("/savewifi", HTTP_POST, handleSaveWifi);
   server.on("/save-ntfy", HTTP_POST, handleSaveNtfy);
   server.on("/saveweathercfg", HTTP_POST, handleSaveWeatherCfg);
@@ -280,8 +301,7 @@ void webBegin() {
   server.on("/wifiscan", handleWifiScan);
   server.on("/staconnect", HTTP_POST, handleStaConnect);
   server.on("/stadisconnect", HTTP_POST, handleStaDisconnect);
-  
-  // A LittleFS-en lévő fájlok kiszolgálása
+
   server.serveStatic("/", LittleFS, "/");
 
   server.begin();
