@@ -74,11 +74,8 @@ void handleHiveView() {
           ".box-square { aspect-ratio: 1 / 1; }"
           ".box-ratio-23 { aspect-ratio: 3 / 2; }"
           ".alert-banner { padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 16px; font-size: 15px; }"
-          
-          /* FIXÁLT HANS MÉM KÉP */
           ".hans-meme-container { width: 100%; text-align: center; margin-bottom: 14px; }"
           ".hans-meme  { width: 100%; max-width: 380px; height: auto; max-height: 200px; object-fit: contain; border-radius: 8px; border: 2px solid #ef4444; display: inline-block; }"
-          
           ".b-grn   { background: rgba(34,197,94,0.3); color: #22c55e; border: 2px solid #22c55e; }"
           ".b-yell  { background: rgba(234,179,8,0.3); color: #eab308; border: 2px solid #eab308; }"
           ".b-org   { background: rgba(249,115,22,0.3); color: #f97316; border: 2px solid #f97316; }"
@@ -104,7 +101,6 @@ void handleHiveView() {
 
   html += "<div style='display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; width:100%;'>";
 
-  // Bal oszlop
   html += "<div style='display:flex; flex-direction:column; gap:16px;'>";
 
   if (isHans) {
@@ -126,17 +122,16 @@ void handleHiveView() {
   html += stateRow("Monitor", monStat, "g");
   html += "</div>";
 
-  html += "<div style='display:flex; gap:10px;'>";
+  html += "<div style='display:flex; gap:10px; margin-bottom:10px;'>";
   html += "<button class='warn' style='flex:1; padding:14px; font-size:16px;' onclick=\"location.href='/treatment?hive=" + hiveId + "'\">📝 Kezelés</button>";
-  html += "<button class='sec' style='flex:1; padding:14px; font-size:16px;' onclick=\"location.href='/config?hive=" + hiveId + "'\">⚙️ Konfig</button>";
+  html += "<button class='warn' style='flex:1; padding:14px; font-size:16px; background:rgba(34,197,94,0.2); border-color:#22c55e; color:#22c55e;' onclick=\"location.href='/evaluation?hive=" + hiveId + "'\">📊 Értékelés</button>";
   html += "</div>";
+  html += "<button class='sec' style='width:100%; padding:14px; font-size:16px;' onclick=\"location.href='/config?hive=" + hiveId + "'\">⚙️ Konfig</button>";
 
   html += "</div>"; 
 
-  // Jobb oszlop: Kaptár állapot
   html += "<div class='card full' style='margin:0;'>";
   html += "<h2>📦 Kaptár Állapot</h2>";
-  
   html += "<div class='hive-stack'>";
   html += "<div class='box-super box-ratio-23 " + box2Class + "'>Méztér 2</div>";
   html += "<div class='box-super box-ratio-23 " + box1Class + "'>Méztér 1</div>";
@@ -147,7 +142,6 @@ void handleHiveView() {
   html += "</div>"; 
 
   html += "</div>"; 
-
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
@@ -176,17 +170,30 @@ void handleNfc() {
 }
 
 void handleMapStatusApi() {
+  if (!checkPinGuard()) return;
+
   String json = "{";
-  json += "\"signal\": -75,";
-  json += "\"fix\": true,";
-  json += "\"sat\": 8,";
-  json += "\"uptime\": " + String(millis() / 60000) + ",";
-  json += "\"heap\": " + String(ESP.getFreeHeap() / 1024) + ",";
-  json += "\"battery\": 3.95,";
-  json += "\"windSpeed\": 12.0,";
-  json += "\"operator\": \"Telekom HU\",";
-  json += "\"lat\": 47.514600,";
-  json += "\"lon\": 19.043500";
+  // Telemetria adatok a jobb/bal felső kártyához
+  json += "\"signal\":-68,";
+  json += "\"fix\":true,";
+  json += "\"sat\":\"5 (3D)\",";
+  json += "\"uptime\":120,";
+  json += "\"heap\":150,";
+
+  // Kaptárak és Készletek tömbje a térképhez
+  json += "\"markers\":[";
+  json += "{\"id\":\"A1B2\",\"type\":\"hive\",\"lat\":47.514700,\"lng\":19.043600,\"status\":\"ok\"},";
+  json += "{\"id\":\"B3C4\",\"type\":\"hive\",\"lat\":47.514650,\"lng\":19.035500,\"status\":\"ok\"},";
+  
+  // --- ITATÓk (Water) - 2 db (Jó és Kritikus) ---
+  json += "{\"id\":\"W1A2\",\"type\":\"water\",\"lat\":47.514800,\"lng\":19.044000,\"level\":95,\"status\":\"good\"},";
+  json += "{\"id\":\"W2B3\",\"type\":\"water\",\"lat\":47.514400,\"lng\":19.042000,\"level\":12,\"status\":\"critical\"},";
+
+  // --- ETETŐK (Syrup) - 2 db (Jó és Alacsony) ---
+  json += "{\"id\":\"S3B4\",\"type\":\"syrup\",\"lat\":47.514300,\"lng\":19.044500,\"level\":80,\"status\":\"good\"},";
+  json += "{\"id\":\"S4C5\",\"type\":\"syrup\",\"lat\":47.514900,\"lng\":19.041500,\"level\":25,\"status\":\"low\"}";
+  json += "]";
+
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -219,7 +226,6 @@ void handleTreatment() {
           "}"
           "</script>";
 
-  // 1. ETETÉS KATEGÓRIA
   html += "<button class='cat-btn' onclick=\"toggleCat('cat-feeding')\">🍯 Etetés ▾</button>";
   html += "<div id='cat-feeding' class='sub-list'>";
   html += "<button class='sub-btn' onclick=\"let v=prompt('Szirup mennyisége (l):','1'); if(v) { alert('Mentve: Szirup - ' + v + ' l'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Szirup (l)</button>";
@@ -228,13 +234,11 @@ void handleTreatment() {
   html += "<button class='sub-btn' onclick=\"let v=prompt('Gyógyszeres lepény mennyisége (kg):','1'); if(v) { alert('Mentve: Gyógyszeres lepény - ' + v + ' kg'); location.href='/hive?hive=" + hiveId + "'; }\">🐝 Gyógyszeres lepény (kg)</button>";
   html += "</div>";
 
-  // 2. GYÓGYKEZELÉS KATEGÓRIA
   html += "<button class='cat-btn' onclick=\"toggleCat('cat-medical')\">💊 Gyógykezelés ▾</button>";
   html += "<div id='cat-medical' class='sub-list'>";
   html += "<button class='sub-btn' onclick=\"alert('Mentve: Nosevit'); location.href='/hive?hive=" + hiveId + "';\">🐝 Nosevit</button>";
   html += "</div>";
 
-  // 3. ATKAIRTÁS KATEGÓRIA
   html += "<button class='cat-btn' onclick=\"toggleCat('cat-mites')\">🛡️ Atkairtás ▾</button>";
   html += "<div id='cat-mites' class='sub-list'>";
   html += "<button class='sub-btn' onclick=\"alert('Mentve: Oxálsav - Tartós hordozó'); location.href='/hive?hive=" + hiveId + "';\">↳ Oxálsav: Tartós hordozó</button>";
@@ -245,7 +249,6 @@ void handleTreatment() {
   html += "<button class='sub-btn' onclick=\"alert('Mentve: Heresejt-kivágás'); location.href='/hive?hive=" + hiveId + "';\">🐝 Egyéb: Heresejt-kivágás</button>";
   html += "</div>";
 
-  // 4. EGYÉB KATEGÓRIA
   html += "<button class='cat-btn' onclick=\"toggleCat('cat-other')\">⚙️ Egyéb / Beavatkozások ▾</button>";
   html += "<div id='cat-other' class='sub-list'>";
   html += "<button class='sub-btn' onclick=\"alert('Mentve: Anyacsere'); location.href='/hive?hive=" + hiveId + "';\">🐝 Anyacsere</button>";
@@ -303,4 +306,92 @@ void handleGetTreatmentsJson() {
 void handleEvaluatePost() {
   server.sendHeader("Location", "/hives", true);
   server.send(302, "text/plain", "");
+}
+
+void handleEvaluation() {
+  if (!checkPinGuard()) return;
+  String hiveId = server.hasArg("hive") ? server.arg("hive") : "A1B2";
+
+  String html = htmlHead("Értékelés: " + hiveId, "11");
+
+  html += "<style>"
+          ".eval-container { max-width: 600px; margin: 0 auto; }"
+          ".cat-btn { display: block; width: 100%; padding: 18px; margin-bottom: 12px; font-size: 18px; font-weight: bold; text-align: left; border-radius: 12px; cursor: pointer; background: var(--card); color: var(--txt); border: 2px solid var(--border); transition: 0.2s; }"
+          ".cat-btn:hover { background: var(--border); border-color: var(--accent); }"
+          ".sub-list { display: none; padding: 8px 0 12px 15px; margin-bottom: 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,0.02); border-radius: 0 8px 8px 0; }"
+          ".eval-item { margin-bottom: 20px; }"
+          ".eval-label { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: var(--txt); }"
+          ".eval-btns { display: flex; gap: 8px; width: 100%; }"
+          ".btn-mm { flex: 1; padding: 16px 0; font-size: 22px; font-weight: bold; border-radius: 8px; background: rgba(239,68,68,0.2); border: 2px solid #ef4444; color: #ef4444; cursor: pointer; }"
+          ".btn-m  { flex: 1; padding: 16px 0; font-size: 22px; font-weight: bold; border-radius: 8px; background: rgba(249,115,22,0.2); border: 2px solid #f97316; color: #f97316; cursor: pointer; }"
+          ".btn-p  { flex: 1; padding: 16px 0; font-size: 22px; font-weight: bold; border-radius: 8px; background: rgba(132,204,22,0.2); border: 2px solid #84cc16; color: #84cc16; cursor: pointer; }"
+          ".btn-pp { flex: 1; padding: 16px 0; font-size: 22px; font-weight: bold; border-radius: 8px; background: rgba(34,197,94,0.2); border: 2px solid #22c55e; color: #22c55e; cursor: pointer; }"
+          "</style>";
+
+  html += "<div class='card wide eval-container'>";
+  html += "<h2>📊 Értékelés - Kaptár: " + hiveId + "</h2>";
+  html += "<p class='hint'>Válaszd ki a kategóriát, majd az értéket (kesztyűbarát mód):</p>";
+
+  html += "<script>"
+          "function toggleCat(id) {"
+          "  let el = document.getElementById(id);"
+          "  let all = document.querySelectorAll('.sub-list');"
+          "  all.forEach(s => { if(s.id !== id) s.style.display = 'none'; });"
+          "  el.style.display = (el.style.display === 'block') ? 'none' : 'block';"
+          "}"
+          "function saveEval(trait, val) {"
+          "  alert('Mentve: ' + trait + ' -> ' + val);"
+          "  location.href='/hive?hive=" + hiveId + "';"
+          "}"
+          "</script>";
+
+  auto evalRow = [](String label) -> String {
+      String s = "<div class='eval-item'><div class='eval-label'>" + label + "</div><div class='eval-btns'>";
+      s += "<button class='btn-mm' onclick=\"saveEval('" + label + "', '--')\">--</button>";
+      s += "<button class='btn-m' onclick=\"saveEval('" + label + "', '-')\">-</button>";
+      s += "<button class='btn-p' onclick=\"saveEval('" + label + "', '+')\">+</button>";
+      s += "<button class='btn-pp' onclick=\"saveEval('" + label + "', '++')\">++</button>";
+      s += "</div></div>";
+      return s;
+  };
+
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-behavior')\">🐝 Viselkedés ▾</button>";
+  html += "<div id='cat-behavior' class='sub-list'>";
+  html += evalRow("Szelíd");
+  html += evalRow("Tisztító");
+  html += evalRow("Építő");
+  html += evalRow("Takarékos");
+  html += "</div>";
+
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-collection')\">🌼 Gyűjtés ▾</button>";
+  html += "<div id='cat-collection' class='sub-list'>";
+  html += evalRow("Méz");
+  html += evalRow("Virágpor");
+  html += evalRow("Propolisz");
+  html += "</div>";
+
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-tendency')\">⚠️ Hajlamok ▾</button>";
+  html += "<div id='cat-tendency' class='sub-list'>";
+  html += evalRow("Rajzási");
+  html += evalRow("Rablási");
+  html += "</div>";
+
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-health')\">🛡️ Egészség ▾</button>";
+  html += "<div id='cat-health' class='sub-list'>";
+  html += evalRow("Betegség ellenállás");
+  html += evalRow("Atka ellenállás");
+  html += "</div>";
+
+  html += "<button class='cat-btn' onclick=\"toggleCat('cat-queen')\">👑 Anya ▾</button>";
+  html += "<div id='cat-queen' class='sub-list'>";
+  html += evalRow("Fiasítás mennyisége");
+  html += evalRow("Fiasítás zártsága");
+  html += evalRow("Megjelenés");
+  html += "</div>";
+
+  html += "<button class='sec' style='margin-top:20px; padding:16px; font-size:16px; width:100%;' onclick=\"location.href='/hive?hive=" + hiveId + "'\">⬅ Vissza a kaptárhoz</button>";
+  html += "</div>";
+
+  html += htmlFoot();
+  server.send(200, "text/html", html);
 }

@@ -58,7 +58,7 @@ void handleHives() {
   // ===================== BAL OSZLOP (Telemetria + Térkép) =====================
   html += "<div class='col-left'>";
 
-  // 1. Telemetria kártya (Felkerült a térkép felé!)
+  // 1. Telemetria kártya
   html += "<div class='card full' style='margin:0; padding:16px;'>";
   html += "<div class='telemetry-grid'>";
   html += "<div class='telemetry-item'><span class='telemetry-label'>GSM Térerő</span><span class='telemetry-value' id='tele-gsm'>Frissítés...</span></div>";
@@ -70,18 +70,17 @@ void handleHives() {
 
   // 2. Térkép kártya
   html += "<div class='card full' style='margin:0; padding:16px;'>";
-  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🗺 KAPTÁRAK TÉRKÉPE</h2>";
-  html += "<p class='hint' style='margin-bottom:12px;'>Koppints bármelyik kaptárra a részletes nézethez.</p>";
+  html += "<h2 style='font-size:15px; margin-bottom:8px;'>🗺 KAPTÁRAK ÉS KÉSZLETEK TÉRKÉPE</h2>";
+  html += "<p class='hint' style='margin-bottom:12px;'>Koppints bármelyik elemre a részletekért.</p>";
   html += "<div id='map'></div>";
   html += "</div>";
 
   html += "</div>"; // Bal oszlop vége
 
-
   // ===================== JOBB OSZLOP (Táblázat) =====================
   html += "<div class='col-right'>";
 
-  // 3. Táblázat kártya (Most már a teljes jobb oldalt kitölti)
+  // 3. Táblázat kártya
   html += "<div class='card full' style='margin:0; padding:16px; height:100%;'>";
   html += "<h2 style='font-size:15px; margin-bottom:8px;'>📋 ÁLLAPOT ÉS BEAVATKOZÁSI ÜTEMTERV</h2>";
   html += "<p class='hint' style='margin-bottom:12px;'>Koppints a kaptár azonosítójára a részletes nézethez.</p>";
@@ -111,37 +110,40 @@ void handleHives() {
           "  attribution: 'Tiles &copy; Esri'"
           "}).addTo(map);"
           
-          // Egyedi ikon generáló függvény
-          "var customIcon = function(color) {"
-          "  return L.divIcon({"
-          "    className: 'custom-div-icon',"
-          "    html: '<div style=\"background-color:'+color+'; width:20px; height:20px; border-radius:6px; border:2px solid #fff; box-shadow:0 0 6px rgba(0,0,0,0.6);\"></div>',"
-          "    iconSize: [24, 24],"
-          "    iconAnchor: [12, 12]"
-          "  });"
-          "};"
-          
-          // --- Kaptárak jelölői ---
-          "L.marker([47.514700, 19.043600], {icon: customIcon('#22c55e')}).bindPopup('<div style=\"text-align:center;\"><b>A1B2</b><br><a href=\"/hive?hive=A1B2\">Részletek megnyitása</a></div>').addTo(map);"
-          "L.marker([47.514650, 19.043550], {icon: customIcon('#eab308')}).bindPopup('<div style=\"text-align:center;\"><b>B3C4</b><br><a href=\"/hive?hive=B3C4\">Részletek megnyitása</a></div>').addTo(map);"
-          "L.marker([47.514600, 19.043500], {icon: customIcon('#f97316')}).bindPopup('<div style=\"text-align:center;\"><b>C5D6</b><br><a href=\"/hive?hive=C5D6\">Részletek megnyitása</a></div>').addTo(map);"
-          "L.marker([47.514550, 19.043450], {icon: customIcon('#ef4444')}).bindPopup('<div style=\"text-align:center;\"><b>D7E8</b><br><a href=\"/hive?hive=D7E8\">Részletek megnyitása</a></div>').addTo(map);"
-          
-          // --- Központi Szerver / Időjárás-állomás jelölője ---
+          // Időjárás-állomás és szerver jelölője[cite: 20]
           "var stationIcon = L.divIcon({ className: 'station-icon', html: '<div style=\"background:#4d4dff; padding:5px; border-radius:50%; font-size:16px; text-align:center; border:2px solid #fff; box-shadow: 0 0 10px rgba(77,77,255,0.8); display:flex; align-items:center; justify-content:center; width:30px; height:30px;\">📡</div>', iconSize: [44,44], iconAnchor: [22,22] });"
-          "L.marker([47.514620, 19.043520], {icon: stationIcon}).bindPopup('<b>Kaptármonitor Szerver</b>').addTo(map);"
+          "L.marker([47.514620, 19.043520], {icon: stationIcon}).bindPopup('<b>Időjárás-állomás és szerver</b>').addTo(map);"
 
-          // --- Telemetria frissítése az API-n keresztül ---
+          // --- API Lekérdezés (Telemetria + Dinamikus Markerek) ---
           "fetch('/api/map_status').then(r=>r.json()).then(data=>{"
           "  document.getElementById('tele-gsm').innerHTML = '<span style=\"color:#4d4dff; margin-right:6px; font-size:16px;\">📊</span><span class=\"val-ok\">' + data.signal + ' dBm</span>';"
           "  var gpsText = data.fix ? '<span class=\"val-ok\">Van (' + data.sat + ')</span>' : '<span class=\"val-err\">Nincs</span>';"
           "  document.getElementById('tele-gps').innerHTML = gpsText;"
           "  document.getElementById('tele-up').innerHTML = '<b>' + data.uptime + ' perc</b>';"
           "  document.getElementById('tele-mem').innerHTML = '<b>' + data.heap + ' KB</b>';"
-          "}).catch(e=>console.log('Telemetria API hiba:', e));"
+
+          // Dinamikus markerek feldolgozása
+          "  if (data.markers && Array.isArray(data.markers)) {"
+          "    data.markers.forEach(item => {"
+          "      let iconHtml = '';"
+          "      let borderColor = '#22c55e';"
+          "      if (item.status === 'low') borderColor = '#f97316';"
+          "      if (item.status === 'critical') borderColor = '#ef4444';"
+          "      if (item.type === 'hive') {"
+          "        iconHtml = '<div style=\"font-size:24px; text-align:center;\">🐝</div>';"
+          "      } else if (item.type === 'water' || item.type === 'syrup') {"
+          "        let bgColor = (item.type === 'water') ? '#3b82f6' : '#eab308';"
+          "        let symbol = (item.type === 'water') ? '💧' : '🍬';"
+          "        iconHtml = '<div style=\"width: 36px; height: 42px; background: ' + bgColor + '; border: 3px solid ' + borderColor + '; border-radius: 8px 8px 4px 4px; position: relative; box-shadow: 0 4px 6px rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center;\"><div style=\"position: absolute; top: -6px; left: 10px; width: 10px; height: 4px; background: ' + borderColor + '; border-radius: 2px;\"></div><div style=\"width: 24px; height: 24px; background: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px;\">' + symbol + '</div></div>';"
+          "      }"
+          "      let customIcon = L.divIcon({ className: 'custom-map-marker', html: iconHtml, iconSize: [36, 42], iconAnchor: [18, 42] });"
+          "      let popupHtml = (item.type === 'hive') ? ('<div style=\"text-align:center;\"><b>' + item.id + '</b><br><a href=\"/hive?hive=' + item.id + '\">Részletek megnyitása</a></div>') : ('<div style=\"text-align:center;\"><b>' + item.id + ' (' + (item.type === 'water' ? 'Itató' : 'Szirup') + ')</b><br>Szint: <b>' + item.level + '%</b><br>Állapot: ' + item.status + '</div>');"
+          "      L.marker([item.lat, item.lng], {icon: customIcon}).bindPopup(popupHtml).addTo(map);"
+          "    });"
+          "  }"
+          "}).catch(e=>console.log('Térkép API hiba:', e));"
           "</script>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
 }
-

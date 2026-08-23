@@ -1,9 +1,8 @@
-//web_common.cpp
+// web_common.cpp
 
 #include <Arduino.h>
 #include <WebServer.h>
 #include "web_common.h"
-
 
 #define DIAG_MAX 20
 
@@ -12,9 +11,11 @@ static int diagHead = 0;
 static int diagCount = 0;
 
 extern WebServer server;
-extern String loadPin(); // Vagy ahonnan a loadPin jön
+extern String loadPin(); 
 
-void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds);
+// Deklaráljuk a külső HTML generáló függvényeket, hogy a sendWaitPage lássa őket
+extern String htmlHead(const String& title, const String& activeTab);
+extern String htmlFoot();
 
 bool checkPinGuard() {
   if (loadPin().length() == 0) {
@@ -35,7 +36,6 @@ String stateRow(const String& key, const String& val, const String& cls) {
   s += "</span></div>";
   return s;
 }
-
 
 void diagAdd(const String& line) {
   Serial.println("[DIAG] " + line);
@@ -261,7 +261,6 @@ String compassAbbrev(float deg) {
   if(idx < 0) idx += 8;
   return String(dirs[idx]);
 }
-
 
 void sendWaitPage(const String& title, const String& message, const String& nextUrl, int waitSeconds) {
   String html = htmlHead(title, "");

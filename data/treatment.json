@@ -1,5 +1,5 @@
 {
-  "version": "2026.08.23-4",
+  "version": "2026.08.23-5",
   "categories": [
     {
       "id": "feeding",
@@ -61,8 +61,38 @@
       ]
     },
     {
+      "id": "inspections",
+      "name": "Vizsgálatok",
+      "options": [
+        {
+          "id": "alcohol_wash",
+          "name": "Atka: Alkoholos lemosás (db)",
+          "needs_value": true,
+          "unit": "db"
+        },
+        {
+          "id": "sugar_roll",
+          "name": "Atka: Porcukros lerázás (db)",
+          "needs_value": true,
+          "unit": "db"
+        },
+        {
+          "id": "co2_test",
+          "name": "Atka: CO2 vizsgálat (db)",
+          "needs_value": true,
+          "unit": "db"
+        },
+        {
+          "id": "vet_inspection",
+          "name": "Méhegészségügyi vizsgálat",
+          "needs_value": true,
+          "unit": "eredmény"
+        }
+      ]
+    },
+    {
       "id": "other_actions",
-      "name": "Egyéb",
+      "name": "Egyéb / Beavatkozások",
       "options": [
         { "id": "queen_replacement", "name": "Anyacsere" },
         { "id": "family_liquidation", "name": "Család felszámolása" },

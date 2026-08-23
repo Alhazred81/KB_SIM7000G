@@ -1,0 +1,55 @@
+{
+  "version": "2026.08.23-eval-v2",
+  "scale": [
+    { "id": "mm", "label": "--", "description": "Kritikusan rossz" },
+    { "id": "m", "label": "-", "description": "Átlag alatti / Gyenge" },
+    { "id": "p", "label": "+", "description": "Jó / Átlag feletti" },
+    { "id": "pp", "label": "++", "description": "Kiváló" }
+  ],
+  "categories": [
+    {
+      "id": "behavior",
+      "name": "Viselkedés",
+      "options": [
+        { "id": "gentle", "name": "Szelíd" },
+        { "id": "cleaning", "name": "Tisztító" },
+        { "id": "building", "name": "Építő" },
+        { "id": "frugal", "name": "Takarékos" }
+      ]
+    },
+    {
+      "id": "collection",
+      "name": "Gyűjtés",
+      "options": [
+        { "id": "honey", "name": "Méz" },
+        { "id": "pollen", "name": "Virágpor" },
+        { "id": "propolis", "name": "Propolisz" }
+      ]
+    },
+    {
+      "id": "tendencies",
+      "name": "Hajlamok",
+      "options": [
+        { "id": "swarming", "name": "Rajzási" },
+        { "id": "robbing", "name": "Rablási" }
+      ]
+    },
+    {
+      "id": "health",
+      "name": "Egészség",
+      "options": [
+        { "id": "disease_resistance", "name": "Betegség ellenállás" },
+        { "id": "mite_resistance", "name": "Atka ellenállás" }
+      ]
+    },
+    {
+      "id": "queen",
+      "name": "Anya",
+      "options": [
+        { "id": "brood_quantity", "name": "Fiasítás mennyisége" },
+        { "id": "brood_compactness", "name": "Fiasítás zártsága" },
+        { "id": "appearance", "name": "Megjelenés" }
+      ]
+    }
+  ]
+}

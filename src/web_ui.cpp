@@ -1,3 +1,5 @@
+//web_ui.cpp  
+
 #include <Arduino.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -6,6 +8,7 @@
 #include "web_common.h"
 #include "web_hives.h"
 #include "web_config.h"
+#include "web_supply.h"
 #include "sensors.h"
 #include "modem_mgr.h"
 #include "gnss_mgr.h"
@@ -13,28 +16,46 @@
 #include "calendar.h"
 #include "time_mgr.h"
 
+// =================================================================================
+// GLOBÁLIS OBJEKTUMOK ÉS VÁLTOZÓK
+// =================================================================================
 extern WebServer server;
+extern String gApSSID;
+extern bool checkPinGuard();
 extern String htmlHead(const String& title, const String& activeTab);
 extern String htmlFoot();
-extern String gApSSID;
-extern void handleNfc();
 
-// --- Globális változó a Setup/Terep módhoz ---
+// Globális változó a Setup/Terep módhoz
 bool gFieldMode = true;
 
-// --- Külső modulokból származó handler függvények deklarációi ---
+// =================================================================================
+// EXTERN HANDLER DEKLARÁCIÓK TÉMAKÖRÖK SZERINT
+// =================================================================================
 
-extern void handleHives();
+// --- Alap UI és Rendszer ---
+extern void handleCss();
 extern void handleCfg();
-extern void handleGsm();
-extern void handleIot();
-extern void handleGnss();
-extern void handleSensors();
-extern void handleDiag();
-extern void handleExpert();
-extern void handleHiveView();
-extern void handleGetTreatmentsJson();
+extern void handleReinit();
+extern void handleEspRestart();
 
+// --- Kaptárkezelés, Értékelés és Beavatkozások ---
+extern void handleHives();
+extern void handleHiveView();
+extern void handleEvaluation();
+extern void handleTreatment();
+extern void handleGetTreatmentsJson();
+extern void handleEvaluatePost();
+extern void handleConfig();
+extern void handleConfigPost();
+extern void handleRegisterPart();
+extern void handleRegisterPartPost();
+
+// --- NFC / RFID ---
+extern void handleNfc();
+
+// --- Modem és GSM funkciók (Hívás, SMS, Hálózatkeresés) ---
+extern void handleGsm();
+extern void handleModemStatus();
 extern void handleDoSms();
 extern void handleSmsStatus();
 extern void handleDoCall();
@@ -44,51 +65,56 @@ extern void handleNetAuto();
 extern void handleNetScan();
 extern void handleNetManual();
 
+// --- IoT, Adatkapcsolat és Mentések (Ntfy, EEPROM) ---
+extern void handleIot();
 extern void handleDataOn();
 extern void handleDataOff();
 extern void handleDataPing();
 extern void handleNtfySend();
 extern void handleNtfyPoll();
+extern void handleSaveNtfy();
 extern void handleSaveReport();
 extern void handleTestReport();
-
 extern void handleEepromBackup();
 extern void handleEepromRestore();
 
+// --- GNSS és Helymeghatározás ---
+extern void handleGnss();
+extern void handleGnssStatus();
+extern void handleGnssAssist();
+extern void handleGnssCtl();
+extern void handleMapStatusApi();
+
+// --- Szenzorok és Időjárás ---
+extern void handleSensors();
 extern void handleSensConfig();
 extern void handleSensToggle();
 extern void handleSensStatus();
 extern void handleSensTest();
-
-extern void handleAtAjax();
-extern void handleAtStatus();
-extern void handleModemStatus();
-extern void handleReinit();
-extern void handleExpertPost();
-extern void handleExpertReset();
-extern void handleExpertFullReset();
-extern void handleEspRestart();
-
-extern void handleGnssStatus();
-extern void handleGnssAssist();
-extern void handleGnssCtl();
-
-extern void handleSaveWifi();
-extern void handleSaveNtfy();
 extern void handleSaveWeatherCfg();
 extern void handleTestWeatherAlert();
-extern void handleMapStatusApi();
-extern void handleTreatment();
-extern void handleEvaluatePost();
-extern void handleConfig();
-extern void handleConfigPost();
-extern void handleRegisterPart();
-extern void handleRegisterPartPost();
+
+// --- Wi-Fi Beállítások (STA Hálózat) ---
+extern void handleSaveWifi();
 extern void handleWifiScan();
 extern void handleStaConnect();
 extern void handleStaDisconnect();
 
-// --- Módváltó handler ---
+// --- Diagnosztika és Haladó (AT parancsok, Factory Reset) ---
+extern void handleDiag();
+extern void handleExpert();
+extern void handleAtAjax();
+extern void handleAtStatus();
+extern void handleExpertPost();
+extern void handleExpertReset();
+extern void handleExpertFullReset();
+
+
+// =================================================================================
+// HELYI HANDLER FÜGGVÉNYEK
+// =================================================================================
+
+// --- Módváltó handler (Terep / Setup) ---
 void handleSetMode() {
   if (!checkPinGuard()) return;
   if (server.hasArg("m")) {
@@ -98,7 +124,7 @@ void handleSetMode() {
   server.send(302, "text/plain", "");
 }
 
-// --- Főoldal / Műszerfal nézet ---
+// --- Főoldal / Műszerfal nézet (HTML Kód) ---
 void handleRoot() {
   if (!checkPinGuard()) return;
 
@@ -129,7 +155,7 @@ void handleRoot() {
   // --- RÁCS KEZDŐDIK ---
   html += "<div class='dash-grid'>";
 
-  // 1. NFC kártya (Gigantikus méhészkesztyűs gombbal)
+  // 1. NFC kártya
   html += "<div class='card'>";
   html += "<h2 style='font-size:14px; margin-bottom:8px;'>📱 NFC / RFID</h2>";
   html += "<div style='flex:1; display:flex; align-items:stretch;'>";
@@ -257,25 +283,42 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-// --- Útvonalak regisztrálása ---
+
+// =================================================================================
+// ÚTVONALAK REGISZTRÁLÁSA (SERVER.ON)
+// =================================================================================
 void webBegin() {
+  
+  // --- Alap UI és Rendszer ---
   server.on("/", handleRoot);
   server.on("/s.css", handleCss); 
-  server.on("/hives", handleHives);
   server.on("/cfg", handleCfg);
-  server.on("/gsm", handleGsm);
-  server.on("/iot", handleIot);
-  server.on("/gnss", handleGnss);
-  server.on("/sensors", handleSensors);
-  server.on("/diag", handleDiag);
-  server.on("/expert", handleExpert);
-  server.on("/hive", handleHiveView);
-  
-  // Végpont regisztrálása a módváltáshoz
   server.on("/setmode", handleSetMode);
+  server.on("/reinit", HTTP_POST, handleReinit);
+  server.on("/esprestart", HTTP_POST, handleEspRestart);
+  
+  // --- Kaptárkezelés, Értékelés és Beavatkozások ---
+  server.on("/hives", handleHives);
+  server.on("/hive", handleHiveView);
+  server.on("/treatment", handleTreatment);
+  server.on("/evaluation", handleEvaluation);
   server.on("/api/treatments", HTTP_GET, handleGetTreatmentsJson);
+  server.on("/evaluate_post", HTTP_POST, handleEvaluatePost);
+  server.on("/config", handleConfig);
+  server.on("/config_post", HTTP_POST, handleConfigPost);
+  server.on("/register_part", handleRegisterPart);
+  server.on("/register_part_post", HTTP_POST, handleRegisterPartPost);
 
-  // GSM végpontok
+  // --- Víztartály és szirupadagoló
+
+  server.on("/supply", handleSupply);
+
+  // --- NFC / RFID ---
+  server.on("/nfc", handleNfc);
+
+  // --- Modem és GSM funkciók ---
+  server.on("/gsm", handleGsm);
+  server.on("/modemstatus", handleModemStatus);
   server.on("/dosms", HTTP_POST, handleDoSms);
   server.on("/smsstatus", handleSmsStatus);
   server.on("/docall", HTTP_POST, handleDoCall);
@@ -285,55 +328,51 @@ void webBegin() {
   server.on("/netscan", HTTP_POST, handleNetScan);
   server.on("/netmanual", HTTP_POST, handleNetManual);
 
-  // IoT / Ntfy / EEPROM végpontok
+  // --- IoT, Adatkapcsolat és Mentések ---
+  server.on("/iot", handleIot);
   server.on("/dataon", HTTP_POST, handleDataOn);
   server.on("/dataoff", HTTP_POST, handleDataOff);
   server.on("/dataping", HTTP_POST, handleDataPing);
   server.on("/ntfy-send", HTTP_POST, handleNtfySend);
   server.on("/ntfy-poll", HTTP_POST, handleNtfyPoll);
+  server.on("/save-ntfy", HTTP_POST, handleSaveNtfy);
   server.on("/save-report", HTTP_POST, handleSaveReport);
   server.on("/test-report", HTTP_POST, handleTestReport);
   server.on("/eeprombackup", HTTP_POST, handleEepromBackup);
   server.on("/eepromrestore", HTTP_POST, handleEepromRestore);
 
-  // Szenzor kapcsolók és teszt végpontok
+  // --- GNSS és Helymeghatározás ---
+  server.on("/gnss", handleGnss);
+  server.on("/gnssstatus", handleGnssStatus);
+  server.on("/gnssassist", HTTP_POST, handleGnssAssist);
+  server.on("/gnssctl", HTTP_POST, handleGnssCtl);
+  server.on("/api/map_status", HTTP_GET, handleMapStatusApi);
+
+  // --- Szenzorok és Időjárás ---
+  server.on("/sensors", handleSensors);
   server.on("/sensconfig", HTTP_POST, handleSensConfig);
   server.on("/senstoggle", HTTP_POST, handleSensToggle);
   server.on("/sensstatus", HTTP_GET, handleSensStatus);
   server.on("/senstest", HTTP_POST, handleSensTest);
-
-  // Diag & Expert végpontok
-  server.on("/at_ajax", handleAtAjax);
-  server.on("/atstatus", HTTP_POST, handleAtStatus);
-  server.on("/modemstatus", handleModemStatus);
-  server.on("/reinit", HTTP_POST, handleReinit);
-  server.on("/expertpost", HTTP_POST, handleExpertPost);
-  server.on("/expertreset", HTTP_POST, handleExpertReset);
-  server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
-  server.on("/esprestart", HTTP_POST, handleEspRestart);
-
-  // GNSS végpontok
-  server.on("/gnssstatus", handleGnssStatus);
-  server.on("/gnssassist", HTTP_POST, handleGnssAssist);
-  server.on("/gnssctl", HTTP_POST, handleGnssCtl);
-
-  // Egyéb funkciók
-  server.on("/nfc", handleNfc);
-  server.on("/savewifi", HTTP_POST, handleSaveWifi);
-  server.on("/save-ntfy", HTTP_POST, handleSaveNtfy);
   server.on("/saveweathercfg", HTTP_POST, handleSaveWeatherCfg);
   server.on("/testweatheralert", HTTP_POST, handleTestWeatherAlert);
-  server.on("/api/map_status", HTTP_GET, handleMapStatusApi);
-  server.on("/treatment", handleTreatment);
-  server.on("/evaluate_post", HTTP_POST, handleEvaluatePost);
-  server.on("/config", handleConfig);
-  server.on("/config_post", HTTP_POST, handleConfigPost);
-  server.on("/register_part", handleRegisterPart);
-  server.on("/register_part_post", HTTP_POST, handleRegisterPartPost);
+
+  // --- Wi-Fi Beállítások ---
+  server.on("/savewifi", HTTP_POST, handleSaveWifi);
   server.on("/wifiscan", handleWifiScan);
   server.on("/staconnect", HTTP_POST, handleStaConnect);
   server.on("/stadisconnect", HTTP_POST, handleStaDisconnect);
 
+  // --- Diagnosztika és Haladó ---
+  server.on("/diag", handleDiag);
+  server.on("/expert", handleExpert);
+  server.on("/at_ajax", handleAtAjax);
+  server.on("/atstatus", HTTP_POST, handleAtStatus);
+  server.on("/expertpost", HTTP_POST, handleExpertPost);
+  server.on("/expertreset", HTTP_POST, handleExpertReset);
+  server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
+  
+  // --- Statikus fájlok kiszolgálása a LittleFS-ből ---
   server.serveStatic("/", LittleFS, "/");
 
   server.begin();
