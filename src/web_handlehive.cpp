@@ -507,3 +507,21 @@ void handlePostQueenRearing() {
     server.send(400, "application/json", "{\"error\":\"bad request\"}");
   }
 }
+
+void handleGetDiseasesJson() {
+  Serial.println("[DISEASES] /api/diseases végpont meghívva...");
+  if (!LittleFS.exists("/diseases.json")) {
+    Serial.println("[DISEASES] HIBA: A /diseases.json fájl nem található a LittleFS-en!");
+    server.send(404, "application/json", "{\"error\":\"diseases.json not found\"}");
+    return;
+  }
+  
+  File f = LittleFS.open("/diseases.json", "r");
+  if (!f) {
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  
+  server.streamFile(f, "application/json");
+  f.close();
+}

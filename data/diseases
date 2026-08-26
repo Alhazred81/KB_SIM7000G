@@ -1,0 +1,69 @@
+{
+  "version": "2026.08.24-1",
+  "statuses": [
+    "Gyanú",
+    "Igazolt"
+  ],
+  "categories": [
+    {
+      "name": "🦠 Baktériumok",
+      "id": "bacteria",
+      "items": [
+        "Nyúlós költésrothadás",
+        "Európai költésrothadás",
+        "Spiroplasma"
+      ]
+    },
+    {
+      "name": "🍄 Gombák",
+      "id": "fungi",
+      "items": [
+        "Költésmeszesedés",
+        "Költéskövesedés"
+      ]
+    },
+    {
+      "name": "🔬 Egysejtűek",
+      "id": "protozoa",
+      "items": [
+        "Gyomorvész",
+        "Amőbabetegség",
+        "Ostoros egysejtűek",
+        "Gregarinák",
+        "Apicystis"
+      ]
+    },
+    {
+      "name": "🕷️ Élősködők",
+      "id": "parasites",
+      "items": [
+        "Varroa atka (Varroa destructor)",
+        "Ázsiai kis méhatka",
+        "Légcsőatka"
+      ]
+    },
+    {
+      "name": "🧬 Vírusok",
+      "id": "viruses",
+      "items": [
+        "Tömlős költéselhalás",
+        "Krónikus méhbénulás",
+        "Feketekór",
+        "Heveny méhbénulás",
+        "Fekete anyabölcső",
+        "Deformált szárny",
+        "Varroa destructo vírus"
+        "Kasmir méhvírus",
+        "Izraeli heveny méhbénulás",
+        "Lassú méhbénulás",
+        "Homályos szárnyvírus",
+        "X méh vírus",
+        "Y méh vírus",
+        "Makulaszerű vírus",
+        "Fonalas vírus",
+        "Rovar irizáló vírus",
+        "Méh rabdovírus"
+      ]
+    }
+  ]
+}

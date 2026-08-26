@@ -1,4 +1,4 @@
-//web_diag.cpp 
+// web_diag.cpp 
 #include "web_diag.h"
 #include "web_common.h"
 #include "modem_mgr.h"
@@ -207,9 +207,25 @@ void handleDiag() {
           "}"
           "document.getElementById('atCmdInput').addEventListener('keydown', function(e){if(e.key==='Enter'){e.preventDefault();sendAtCmd();}});"
           "</script>";
-  html += "<form action='/atstatus' method='POST' style='margin-top:10px'>"
-          "<button class='warn'>AT allapot snapshot</button></form>";
-  if(gAtStatusSnapshotAt > 0) html += "<div class='hint'>Legutobbi snapshot: " + ageText(gAtStatusSnapshotAt) + "</div>";
+          
+  // --- ÚJ: Itt kapott helyet a gomb, ami meghívja a terminálba küldést ---
+  html += "<div style='display:flex; gap:10px; margin-top:15px;'>";
+  html += "<form action='/atstatus' method='POST' style='flex:1; margin:0;'>"
+          "<button class='warn' style='width:100%; margin:0;'>AT allapot snapshot</button></form>";
+  html += "<button class='sec' style='flex:1; margin:0; border-color:#3b82f6; color:#3b82f6;' onclick='dumpModemSerial()'>📡 Terminálba küld</button>";
+  html += "</div>";
+
+  html += "<script>"
+          "function dumpModemSerial() {"
+          "  fetch('/api/atstatus_serial')"
+          "    .then(function(r){"
+          "      if(r.ok) alert('Az aktuális AT Snapshot sikeresen kiírásra került a Serial terminálra!');"
+          "      else alert('Hiba történt a kommunikáció során.');"
+          "    }).catch(function(e){ alert('Hálózati hiba: ' + e); });"
+          "}"
+          "</script>";
+
+  if(gAtStatusSnapshotAt > 0) html += "<div class='hint' style='margin-top:5px;'>Legutobbi snapshot: " + ageText(gAtStatusSnapshotAt) + "</div>";
   html += "</div>";
 
   if(gAtStatusSnapshot.length() > 0) {
@@ -248,6 +264,21 @@ void handleAtStatus() {
   diagAdd("AT allapot snapshot kesz");
   server.sendHeader("Location","/diag");
   server.send(302);
+}
+
+// --- ÚJ FÜGGVÉNY: Az elkészült snapshot kiküldése a Serial portra ---
+void handleAtStatusSerial() {
+  if (!checkPinGuard()) return;
+  
+  Serial.println("\n========== 📡 MODEM AT-STÁTUSZ SNAPSHOT 📡 ==========");
+  if (gAtStatusSnapshot.length() > 0) {
+    Serial.println(gAtStatusSnapshot);
+  } else {
+    Serial.println("(Még nincs AT állapot snapshot készítve. Nyomj az 'AT allapot snapshot' gombra a weben előbb!)");
+  }
+  Serial.println("=====================================================\n");
+  
+  server.send(200, "text/plain", "OK");
 }
 
 void handleModemStatus() {

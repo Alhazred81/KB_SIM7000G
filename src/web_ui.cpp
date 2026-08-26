@@ -51,7 +51,7 @@ extern void handleRegisterPart();
 extern void handleRegisterPartPost();
 extern void handleGetEvaluationsJson();
 extern void handleGetColonyFunctionsJson();
-
+extern void handleGetDiseasesJson();
 // --- NFC / RFID ---
 extern void handleNfc();
 
@@ -312,7 +312,7 @@ void webBegin() {
   server.on("/register_part", handleRegisterPart);
   server.on("/register_part_post", HTTP_POST, handleRegisterPartPost);
   server.on("/api/colony_functions", HTTP_GET, handleGetColonyFunctionsJson);
-
+  server.on("/api/diseases", HTTP_GET, handleGetDiseasesJson);
   // --- Víztartály és szirupadagoló
 
   server.on("/supply", handleSupply);
