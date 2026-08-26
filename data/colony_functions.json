@@ -1,15 +1,83 @@
 {
-  "version": "2026.08.23-1",
-  "colony_functions": [
+  "version": "2026.08.26-1",
+  "tags": [
     {
-      "name": "Termelő",
-      "id": "producer",
-      "types": ["Méz", "Virágpor", "Propolisz", "Méhméreg", "Pempő"]
+      "id": "dajka",
+      "label": "🍼 Dajkacsalád",
+      "sleep_override_min": 10,
+      "observations": ["heat_stability"]
     },
     {
-      "name": "Szaporítás",
-      "id": "propagation",
-      "types": ["Dajka", "Anya", "Apa", "Starter"]
+      "id": "rajzo",
+      "label": "🐝 Rajzási hajlam",
+      "sleep_override_min": 5,
+      "observations": ["swarm_drop", "heat_spike"]
+    },
+    {
+      "id": "anyatlan",
+      "label": "👑 Anyátlan",
+      "sleep_override_min": 15,
+      "observations": []
+    },
+    {
+      "id": "termelo",
+      "label": "🍯 Termelő / Erős",
+      "sleep_override_min": 30,
+      "observations": ["nectar_flow"]
+    },
+    {
+      "id": "rablo",
+      "label": "🏴‍☠️ Rabló hajlam",
+      "sleep_override_min": 15,
+      "observations": ["weight_spike"]
+    }
+  ],
+  "treatment_rules": [
+    {
+      "id": "queen_rearing_critical",
+      "label": "Anyanevelés - Kelési időszak (13-15. nap)",
+      "sleep_override_min": 5,
+      "observations": ["heat_stability"]
+    },
+    {
+      "id": "varroa_treatment",
+      "label": "Atkaölő kezelés alatt",
+      "sleep_override_min": 15,
+      "observations": ["agitation_heat"]
+    }
+  ],
+  "observations": [
+    {
+      "id": "swarm_drop",
+      "label": "Rajzás / Hirtelen súlyvesztés",
+      "description": "Riasztás, ha a súly 1 órán belül több mint 1.5 kg-ot esik.",
+      "trigger": "weight_diff <= -1.5",
+      "timeframe_min": 60,
+      "action": "ntfy_alert"
+    },
+    {
+      "id": "heat_spike",
+      "label": "Fészekhő ugrás (Kártevő / Zavarás télen)",
+      "description": "Riasztás, ha a hőmérséklet gyorsan megugrik a nyugalmi időszakban.",
+      "trigger": "temp_diff >= 3.0",
+      "timeframe_min": 30,
+      "action": "ntfy_alert"
+    },
+    {
+      "id": "heat_stability",
+      "label": "Fészekhő stabilitás (Fiasítás/Anyanevelés)",
+      "description": "Riasztás, ha a fészekhő 34°C alá esik.",
+      "trigger": "temp_abs < 34.0",
+      "timeframe_min": 30,
+      "action": "ntfy_alert"
+    },
+    {
+      "id": "nectar_flow",
+      "label": "Hordás figyelése",
+      "description": "Folyamatos pozitív súlyváltozás naplója (riasztás nélkül).",
+      "trigger": "weight_diff > 0.5",
+      "timeframe_min": 60,
+      "action": "log"
     }
   ]
 }

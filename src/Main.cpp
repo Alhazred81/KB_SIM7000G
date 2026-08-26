@@ -18,6 +18,7 @@
 #include "modem_mgr.h"
 #include "NtfyClient.h"
 #include "sensors.h"
+#include "server_receiver.h"
 #include "time_mgr.h"
 #include "weather_mgr.h"
 #include "web_ui.h"
@@ -303,6 +304,8 @@ void setup() {
   String pin = loadPin();
   bool ok = modemInit();
   
+  //ESP-NOW indítás
+  initServerEspNow();
   // --- ÚJ: ntfy debug engedélyezése ---
   ntfy.setDebugStream(&Serial); // A soros monitorra is kiírja a HTTP kérések eredményét
 

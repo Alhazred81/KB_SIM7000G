@@ -1,0 +1,21 @@
+{
+  "comm_type": "comm_tel",
+  "device_mac": "24:6F:28:AB:CD:EF",
+  "timestamp": 1787680000,
+  "sensors": {
+    "sht40": {
+      "temp_c": 34.5,
+      "humidity_pct": 62.1
+    },
+    "sgp41": {
+      "voc_index": 120,
+      "nox_index": 10
+    },
+    "ultrasonic": {
+      "feed_distance_mm": 150
+    },
+    "power": {
+      "battery_v": 4.1
+    }
+  }
+}
