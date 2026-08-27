@@ -8,6 +8,7 @@
 #include "web_common.h"
 #include "web_hives.h"
 #include "web_config.h"
+#include "web_diag.h"
 #include "web_supply.h"
 #include "sensors.h"
 #include "modem_mgr.h"
@@ -252,19 +253,20 @@ void handleRoot() {
       html += "<div style='font-weight:bold; color:var(--accent); font-size:12px; margin-bottom:4px;'>" + String(dayNames[d]) + "</div>";
       html += "<div style='display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; text-align:center; font-size:11px;'>";
       for(int b = 0; b < 4; b++) {
-        float t = (gForecast[d].blocks[b].tempMin + gForecast[d].blocks[b].tempMax) / 2.0;
+        float minT = gForecast[d].blocks[b].tempMin;
+        float maxT = gForecast[d].blocks[b].tempMax;
         float p = gForecast[d].blocks[b].precip;
         
         String icon = "☀️";
         if (p > 15.0) icon = "🧊";
         else if (p > 5.0) icon = "⚡";
         else if (p > 0.5) icon = "🌧️";
-        else if (t < 15) icon = "⛅";
+        else if ((minT + maxT) / 2.0 < 15) icon = "⛅";
         
         html += "<div style='background:rgba(255,255,255,0.04); padding:4px 2px; border-radius:6px; border:1px solid var(--border);'>"
                 "<div style='font-size:9px; color:var(--txt2);'>" + String(timeSlots[b]) + "</div>"
                 "<div style='font-size:14px; margin:2px 0;'>" + icon + "</div>"
-                "<div>" + String(t, 0) + "°C</div>"
+                "<div style='font-size:10px; font-weight:bold;'>" + String(minT, 0) + " - " + String(maxT, 0) + "°C</div>"
                 "</div>";
       }
       html += "</div></div>";
@@ -363,7 +365,7 @@ void webBegin() {
 
   // --- Wi-Fi Beállítások ---
   server.on("/savewifi", HTTP_POST, handleSaveWifi);
-  server.on("/wifiscan", handleWifiScan);
+  server.on("/wifiscan", HTTP_POST, handleWifiScan);
   server.on("/staconnect", HTTP_POST, handleStaConnect);
   server.on("/stadisconnect", HTTP_POST, handleStaDisconnect);
 
@@ -375,6 +377,7 @@ void webBegin() {
   server.on("/expertpost", HTTP_POST, handleExpertPost);
   server.on("/expertreset", HTTP_POST, handleExpertReset);
   server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
+  server.on("/api/atstatus_serial", HTTP_GET, handleAtStatusSerial);
   
   // --- Statikus fájlok kiszolgálása a LittleFS-ből ---
   server.serveStatic("/", LittleFS, "/");

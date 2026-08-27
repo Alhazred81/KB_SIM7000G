@@ -882,49 +882,49 @@ String modemAtQuery(const String& cmd, unsigned long timeoutMs) {
 }
 
 void refreshAtStatusSnapshot() {
-  static const char* cmds[] = {
-    "AT", "ATI", "AT+CGMI", "AT+CGMM", "AT+CGMR", "AT+CGSN", "AT+CIMI", "AT+CCID",
-    "AT+CPIN?", "AT+CSQ", "AT+COPS?", "AT+CREG?", "AT+CGREG?", "AT+CEREG?", "AT+CNSMOD?",
-    "AT+CGATT?", "AT+CGACT?", "AT+CNACT?", "AT+CGDCONT?", "AT+CSCA?", "AT+CMGF?", "AT+CSCS?",
-    "AT+CNMI?", "AT+CLCC", "AT+CCLK?", "AT+CBC", "AT+CGNSPWR?", "AT+CGNSINF", "AT+CGNSSINFO", "AT+CGNSANT"
-  };
-  static const uint16_t timeouts[] = {
-    800, 1200, 1000, 1000, 1000, 1000, 1200, 1200,
-    1200, 1000, 1800, 1000, 1000, 1000, 1200,
-    1200, 1200, 1800, 1400, 1500, 1000, 1000,
-    1000, 1000, 1200, 1200, 1200, 1800, 1800, 1200
-  };
-  const uint8_t count = sizeof(cmds) / sizeof(cmds[0]);
+  // A fejléc rövidítése
+  gAtStatusSnapshot = "AT ÁLLAPOT SNAPSHOT | " + gTime.localTime + "\n";
+  gAtStatusSnapshot += "=========================================================\n";
 
-  gAtStatusInProgress = true;
-  gAtStatusSnapshot = "========================================\n";
-  gAtStatusSnapshot += "         AT ALLAPOT SNAPSHOT            \n";
-  gAtStatusSnapshot += "========================================\n";
-  gAtStatusSnapshot += "Ido: " + bestAvailableTimestamp() + "\n";
-  gAtStatusSnapshot += "========================================\n\n";
-  gAtStatusSnapshot.reserve(6000);
+  // A parancsok tömbje (ez már megvan a kódodban)
+  const char* cmds[] = {
+    "AT", "ATI", "AT+CGMI", "AT+CGMM", "AT+CGMR", "AT+CGSN", "AT+CIMI", 
+    "AT+CCID", "AT+CPIN?", "AT+CSQ", "AT+COPS?", "AT+CREG?", "AT+CGREG?", 
+    "AT+CEREG?", "AT+CNSMOD?", "AT+CGATT?", "AT+CGACT?", "AT+CNACT?", 
+    "AT+CGDCONT?", "AT+CSCA?", "AT+CMGF?", "AT+CSCS?", "AT+CNMI?", 
+    "AT+CLCC", "AT+CCLK?", "AT+CBC", "AT+CGNSPWR?", "AT+CGNSINF", 
+    "AT+CGNSSINFO", "AT+CGNSANT"
+  };
+  int cmdCount = sizeof(cmds) / sizeof(cmds[0]);
 
-  for(uint8_t i = 0; i < count; i++) {
+  for (int i = 0; i < cmdCount; i++) {
     String cmd = cmds[i];
-    String resp = modemAtQuery(cmd, timeouts[i]);
+    String resp = modemAtQuery(cmd, 1500); // Parancs küldése
     
+    // --- TÖMÖRÍTÉS LOGIKÁJA ---
+    
+    // 1. Sortörések és kocsivisszák eltüntetése (szóközre cserélve)
     resp.replace("\r", "");
-    while(resp.indexOf("\n\n") >= 0) {
-      resp.replace("\n\n", "\n");
+    resp.replace("\n", " ");
+    resp.trim();
+    
+    // 2. Felesleges "OK" levágása a végéről, ha van előtte érdemi adat (pl. "+CSQ: 31,99 OK" -> "+CSQ: 31,99")
+    if (resp.endsWith(" OK") && resp.length() > 3) {
+      resp = resp.substring(0, resp.length() - 3);
+    } else if (resp.endsWith("OK") && resp.length() > 2) {
+      resp = resp.substring(0, resp.length() - 2);
     }
     resp.trim();
-
-    char numBuf[12];
-    snprintf(numBuf, sizeof(numBuf), "[%02d/%02d] ", i + 1, count);
-
-    gAtStatusSnapshot += String(numBuf) + cmd + "\n";
-    gAtStatusSnapshot += "----------------------------------------\n";
-    gAtStatusSnapshot += (resp.length() > 0 ? resp : "(ures valasz / timeout)") + "\n\n";
-    yield();
+    
+    // 3. Ha teljesen üres maradt (csak egy OK volt), visszaírjuk
+    if (resp.length() == 0) resp = "OK";
+    
+    // 4. Szépen igazított, egysoros formázás: [01/30] AT+CSQ         -> +CSQ: 31,99
+    char lineBuf[256];
+    snprintf(lineBuf, sizeof(lineBuf), "[%02d/%02d] %-14s -> %s\n", i + 1, cmdCount, cmd.c_str(), resp.c_str());
+    
+    gAtStatusSnapshot += lineBuf;
   }
-
-  gAtStatusSnapshotAt = millis();
-  gAtStatusInProgress = false;
 }
 
 String modemApplyExpertConfig(const String& cnmp, const String& cgsms, const String& bands, const String& cmnb) {

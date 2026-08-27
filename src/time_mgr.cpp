@@ -1,89 +1,82 @@
-//time_mgr.cpp
-
+// time_mgr.cpp
 #include <Arduino.h>
-#include <WiFi.h>
+#include <sys/time.h>
+#include <time.h>
 #include "time_mgr.h"
+#include "modem_mgr.h" // A gModem.ready eléréséhez
+
+extern ModemState gModem;
 
 TimeState gTime;
-extern HardwareSerial modemSerial; // <-- Ide beillesztve
 
 String formatLocalTime() {
   struct tm tmInfo;
+  // Kiolvassuk az ESP32 belső RTC-jét
   if(!getLocalTime(&tmInfo, 20)) return "-";
 
   char buf[32];
   strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmInfo);
-
   return String(buf);
 }
 
 void ntpStart() {
-  if(WiFi.status() != WL_CONNECTED) return;
-
-  configTzTime(
-    "CET-1CEST,M3.5.0/2,M10.5.0/3",
-    "pool.ntp.org",
-    "time.nist.gov",
-    "time.google.com"
-  );
-
+  // A függvény neve szándékosan maradt ntpStart, hogy a main.cpp-t ne kelljen átírni!
+  Serial.println(F("[TIME] Várakozás a modem hálózati idejére..."));
   gTime.started = true;
   gTime.synced = false;
   gTime.lastCheck = 0;
-
-  Serial.println(F("[NTP] Ido szinkron inditva (Europe/Budapest)."));
 }
 
 void ntpLoop() {
-  if(!gTime.started || WiFi.status() != WL_CONNECTED) return;
-  if(millis() - gTime.lastCheck < 10000UL) return;
+  if(!gTime.started) return;
 
+  // Ha már megtörtént a szinkron, másodpercenként csak a szöveges változót frissítjük az RTC-ből
+  if (gTime.synced) {
+    if(millis() - gTime.lastCheck > 1000UL) {
+      gTime.lastCheck = millis();
+      String now = formatLocalTime();
+      if(now != "-") gTime.localTime = now;
+    }
+    return;
+  }
+
+  // Amíg a modem nincs a hálózaton (READY), nem bombázzuk az AT paranccsal
+  if (!gModem.ready) return;
+
+  // Szinkronizáció előtt 10 másodpercenként próbálkozunk
+  if(millis() - gTime.lastCheck < 10000UL) return;
   gTime.lastCheck = millis();
 
-  String now = formatLocalTime();
+  // Lekérjük a mobilhálózat idejét
+  String resp = modemAtQuery("AT+CCLK?", 1500);
+  
+  // Parse: +CCLK: "26/08/27,07:43:54+08"
+  int startIdx = resp.indexOf("\"");
+  int endIdx = resp.lastIndexOf("\"");
 
-  if(now != "-") {
-    bool firstSync = !gTime.synced;
+  if (startIdx != -1 && endIdx != -1 && (endIdx - startIdx >= 17)) {
+    String cclk = resp.substring(startIdx + 1, endIdx);
 
-    gTime.synced = true;
-    gTime.localTime = now;
+    struct tm t;
+    memset(&t, 0, sizeof(struct tm));
 
-    if(firstSync) {
-      Serial.println("[NTP] Ido szinkron OK: " + gTime.localTime);
-      modemSetTimeFromSystem(); // <-- EZ KÜldi ÁT A MODEMBE ÉS A GNSS-NEK A PONTOS IDŐT!
+    t.tm_year = (cclk.substring(0, 2).toInt() + 2000) - 1900;
+    t.tm_mon  = cclk.substring(3, 5).toInt() - 1;
+    t.tm_mday = cclk.substring(6, 8).toInt();
+    t.tm_hour = cclk.substring(9, 11).toInt();
+    t.tm_min  = cclk.substring(12, 14).toInt();
+    t.tm_sec  = cclk.substring(15, 17).toInt();
+    t.tm_isdst = -1;
+
+    time_t epochTime = mktime(&t);
+    if (epochTime >= 0) {
+      // Beállítjuk az ESP32 belső óráját (RTC) a modemtől kapott adatokkal
+      struct timeval tv = { .tv_sec = epochTime, .tv_usec = 0 };
+      settimeofday(&tv, NULL);
+
+      gTime.synced = true;
+      gTime.localTime = formatLocalTime();
+      Serial.println("[TIME] Időszinkron OK (Modemről): " + gTime.localTime);
     }
   }
-}
-// time_mgr.cpp-hez tartozó kiegészítés
-
-void syncModemClockWithNtp() {
-  if (!gTime.synced) return;
-  String t = gTime.localTime; 
-  if (t.length() >= 19) {
-    String yy = t.substring(2, 4);
-    String mo = t.substring(5, 7);
-    String dd = t.substring(8, 10);
-    String hh = t.substring(11, 13);
-    String mi = t.substring(14, 16);
-    String ss = t.substring(17, 19);
-    
-    // Mivel CET/CEST zónában vagyunk (+2 óra nyáron, ami 8 negyedóra -> +08)
-    String cclk = "AT+CCLK=\"" + yy + "/" + mo + "/" + dd + "," + hh + ":" + mi + ":" + ss + "+08\"";
-    
-    // Használjuk a közvetlen soros parancsot, ami a modem_mgr-en keresztül mindenhol elérhető:
-    modemSerial.println(cclk);
-    // Beolvassuk a választ, hogy kiürüljön a puffer
-    unsigned long start = millis();
-    while (millis() - start < 1000) {
-      if (modemSerial.available()) {
-        modemSerial.readStringUntil('\n');
-      }
-      yield();
-    }
-  }
-}
-
-bool modemSetTimeFromSystem() {
-  syncModemClockWithNtp();
-  return true;
 }

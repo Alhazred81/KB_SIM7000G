@@ -12,14 +12,14 @@
 #include "modem_mgr.h"
 #include "gnss_mgr.h"
 #include "time_mgr.h"
+#include "NtfyClient.h"
+#include <WebServer.h>
 
 extern TinyGsm modem; 
 extern GnssState gGnss;
 extern TimeState gTime;
-
-// Ha az ntfy küldő függvényed máshol van deklarálva, illeszd be az extern-t,
-// vagy hívd a saját ntfy triggeredet:
-// extern void sendNtfyAlert(String title, String message, int priority);
+extern WebServer server;
+extern NtfyClient ntfy; // <-- Itt a deklaráció a main.cpp-ben lévő ntfy-hoz
 
 DailyForecast gForecast[3];
 unsigned long gLastWeatherSync = 0;
@@ -33,31 +33,33 @@ bool weatherUpdate(float lat, float lon) {
   Serial.printf("[WEATHER] Idojaras-szinkronizacio inditasa (Lat: %.4f, Lon: %.4f)...\n", lat, lon);
 
   char resource[250];
-  // HOZZÁADVA: hourly paraméterekhez a weathercode is!
   snprintf(resource, sizeof(resource), 
     "/v1/forecast?latitude=%.4f&longitude=%.4f&hourly=temperature_2m,precipitation,weathercode&timezone=Europe/Budapest&forecast_days=3", 
     lat, lon);
 
-  const char* server = "api.open-meteo.com";
+  const char* server_url = "api.open-meteo.com";
   const int port = 80;
 
   TinyGsmClient client(modem, 0);
 
   Serial.println(F("[WEATHER] Kapcsolodas az Open-Meteo szerverhez..."));
-  if (!client.connect(server, port)) {
+  
+  if (!client.connect(server_url, port)) {
     Serial.println(F("[WEATHER] HIBA: Nem sikerult kapcsolodni az API-hoz!"));
     return false;
   }
 
   client.print(String("GET ") + resource + " HTTP/1.1\r\n");
-  client.print(String("Host: ") + server + "\r\n");
+  client.print(String("Host: ") + server_url + "\r\n");
   client.print("Connection: close\r\n\r\n");
 
-  // 1. Fejlécek átlépése
   uint32_t timeout = millis();
   bool headersEnded = false;
   
   while (client.connected() && millis() - timeout < 10000L) {
+    server.handleClient();
+    yield();
+    
     while (client.available()) {
       String line = client.readStringUntil('\n');
       line.trim();
@@ -75,23 +77,45 @@ bool weatherUpdate(float lat, float lon) {
     return false;
   }
 
-  // 2. Chunkolt adatok olvasása
   String rawJson = "";
-  while (client.connected() || client.available()) {
+  rawJson.reserve(8192);
+
+  uint32_t readTimeout = millis();
+  while ((client.connected() || client.available()) && millis() - readTimeout < 20000L) {
+    server.handleClient();
+    yield();
+
+    if (!client.available()) continue;
+
     String chunkSizeLine = client.readStringUntil('\n');
     chunkSizeLine.trim();
     if (chunkSizeLine.length() == 0) continue;
 
     int chunkSize = strtol(chunkSizeLine.c_str(), NULL, 16);
-    if (chunkSize == 0) break; 
+    if (chunkSize == 0) break;
 
-    char* chunkBuffer = new char[chunkSize + 1];
-    int bytesRead = client.readBytes(chunkBuffer, chunkSize);
-    chunkBuffer[bytesRead] = '\0';
-    
-    rawJson += String(chunkBuffer);
-    delete[] chunkBuffer;
-
+    int currentRead = 0;
+    while (currentRead < chunkSize && millis() - readTimeout < 20000L) {
+      server.handleClient();
+      yield();
+      
+      if (client.available()) {
+        int toRead = client.available();
+        if (toRead > chunkSize - currentRead) {
+          toRead = chunkSize - currentRead;
+        }
+        
+        uint8_t buf[128];
+        if (toRead > sizeof(buf)) toRead = sizeof(buf);
+        
+        int r = client.read(buf, toRead);
+        if (r > 0) {
+          for(int k=0; k<r; k++) rawJson += (char)buf[k];
+          currentRead += r;
+          readTimeout = millis();
+        }
+      }
+    }
     client.readStringUntil('\n');
   }
 
@@ -102,7 +126,6 @@ bool weatherUpdate(float lat, float lon) {
     return false;
   }
 
-  // 3. JSON feldolgozása
   JsonDocument doc; 
   DeserializationError error = deserializeJson(doc, rawJson);
 
@@ -123,7 +146,7 @@ bool weatherUpdate(float lat, float lon) {
   JsonArray timeArr = doc["hourly"]["time"];
   JsonArray tempArr = doc["hourly"]["temperature_2m"];
   JsonArray precipArr = doc["hourly"]["precipitation"];
-  JsonArray codeArr = doc["hourly"]["weathercode"]; // ÚJ: Időjárás kódok tömbje
+  JsonArray codeArr = doc["hourly"]["weathercode"];
 
   if (timeArr.isNull() || tempArr.isNull() || codeArr.isNull()) {
     Serial.println(F("[WEATHER] HIBA: A JSON nem tartalmaz 'hourly' adatokat."));
@@ -149,22 +172,24 @@ bool weatherUpdate(float lat, float lon) {
     if (temp > gForecast[day].blocks[block].tempMax) gForecast[day].blocks[block].tempMax = temp;
     gForecast[day].blocks[block].precip += precip;
     
-    // Elmentjük a legsúlyosabb időjárás kódot erre a blokkra
     if (code > gForecast[day].blocks[block].weatherCode) {
       gForecast[day].blocks[block].weatherCode = code;
     }
 
-    // Vihar (95) vagy Jégeső (96, 99) detektálása az előrejelzésben
     if (code == 96 || code == 99 || code == 95 || precip > 6.0) {
       severeWeatherDetected = true;
     }
   }
 
-  // Ha veszélyes időt (vihar / jég) hoznak a modellek, küldünk egy maximális prioritású riasztást
   if (severeWeatherDetected) {
     Serial.println(F("[WEATHER] 🧊⚡ FIGYELEM: Extrém időjárás (Vihar / Jég) várható a következő napokban!"));
-    // Itt triggerelheted az NTFY riasztást (5-ös prió):
-    // sendNtfyAlert("VIGYÁZAT: Vihar vagy Jégeső!", "Az elorejelzes alapjan veszelyes idojaras (vihar/jeg) kozeleg!", 5);
+    
+    bool sent = ntfy.send("Az elorejelzes alapjan veszelyes idojaras (vihar/jeg) kozeleg!", "VIGYÁZAT: Vihar vagy Jégeső!", (NtfyPriority)5);
+    if (sent) {
+      Serial.println(F("[WEATHER] Vihar riasztás sikeresen elküldve ntfy-on!"));
+    } else {
+      Serial.println(F("[WEATHER] HIBA: Nem sikerült elküldeni a vihar riasztást ntfy-on."));
+    }
   }
 
   gWeatherHasData = true;

@@ -208,20 +208,28 @@ void handleDiag() {
           "document.getElementById('atCmdInput').addEventListener('keydown', function(e){if(e.key==='Enter'){e.preventDefault();sendAtCmd();}});"
           "</script>";
           
-  // --- ÚJ: Itt kapott helyet a gomb, ami meghívja a terminálba küldést ---
+  // --- ÚJ és JAVÍTOTT AT gombok ---
   html += "<div style='display:flex; gap:10px; margin-top:15px;'>";
   html += "<form action='/atstatus' method='POST' style='flex:1; margin:0;'>"
-          "<button class='warn' style='width:100%; margin:0;'>AT allapot snapshot</button></form>";
-  html += "<button class='sec' style='flex:1; margin:0; border-color:#3b82f6; color:#3b82f6;' onclick='dumpModemSerial()'>📡 Terminálba küld</button>";
+          "<button class='warn' style='width:100%; margin:0;'>AT allapot snapshot (Webre)</button></form>";
+  html += "<button type='button' class='sec' style='flex:1; margin:0; border-color:#3b82f6; color:#3b82f6;' onclick='dumpModemSerial(this)'>📡 Frissít & Terminálba küld</button>";
   html += "</div>";
 
   html += "<script>"
-          "function dumpModemSerial() {"
+          "function dumpModemSerial(btn) {"
+          "  var origText = btn.innerText;"
+          "  btn.innerText = '⏳ Készül...';"
+          "  btn.disabled = true;"
           "  fetch('/api/atstatus_serial')"
           "    .then(function(r){"
-          "      if(r.ok) alert('Az aktuális AT Snapshot sikeresen kiírásra került a Serial terminálra!');"
+          "      if(r.ok) alert('A legfrissebb AT Snapshot elkészült, nézd a Serial terminált!');"
           "      else alert('Hiba történt a kommunikáció során.');"
-          "    }).catch(function(e){ alert('Hálózati hiba: ' + e); });"
+          "    }).catch(function(e){ alert('Hálózati hiba: ' + e); })"
+          "    .finally(function(){"
+          "      btn.innerText = origText;"
+          "      btn.disabled = false;"
+          "      location.reload();"
+          "    });"
           "}"
           "</script>";
 
@@ -266,15 +274,19 @@ void handleAtStatus() {
   server.send(302);
 }
 
-// --- ÚJ FÜGGVÉNY: Az elkészült snapshot kiküldése a Serial portra ---
+// --- ÚJ FÜGGVÉNY JAVÍTVA: Nincs checkPinGuard(), mert a fetch ezt hívja a háttérben ---
 void handleAtStatusSerial() {
-  if (!checkPinGuard()) return;
+  // 1. Lefuttatjuk a snapshot generálást helyben (ez beletelik 2-3 másodpercbe)
+  diagAdd("AT allapot snapshot inditva (Terminalbol kertek)");
+  refreshAtStatusSnapshot();
+  diagAdd("AT allapot snapshot kesz");
   
+  // 2. Kiírjuk a friss eredményt a terminálra
   Serial.println("\n========== 📡 MODEM AT-STÁTUSZ SNAPSHOT 📡 ==========");
   if (gAtStatusSnapshot.length() > 0) {
     Serial.println(gAtStatusSnapshot);
   } else {
-    Serial.println("(Még nincs AT állapot snapshot készítve. Nyomj az 'AT allapot snapshot' gombra a weben előbb!)");
+    Serial.println("(Üres válasz, a modem valószínűleg nem válaszol.)");
   }
   Serial.println("=====================================================\n");
   
