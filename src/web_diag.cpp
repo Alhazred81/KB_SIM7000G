@@ -1,10 +1,13 @@
 // web_diag.cpp 
+
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <WebServer.h>
+#include <WiFi.h> 
 #include "web_diag.h"
 #include "web_common.h"
 #include "modem_mgr.h"
 #include "time_mgr.h"
-#include <WebServer.h>
-#include <WiFi.h> // WiFi.softAPgetStationNum() miatt
 
 extern WebServer server;
 extern ModemState gModem;
@@ -242,6 +245,48 @@ void handleDiag() {
             "<div class='diag' id='atSnapshotBox'>" + htmlEscape(gAtStatusSnapshot) + "</div></div>";
   }
 
+  // --- KAPTÁR MENEDZSER (TESZTÜZEM) KÁRTYA ---
+  html += "<div class='card'>";
+  html += "<h2>🐝 Kaptár Menedzser (Adatbázis Tesztüzem)</h2>";
+  html += "<p class='hint'>Adatbázis közvetlen kezelése és fiktív kaptárak létrehozása a műszerfal/térkép teszteléséhez.</p>";
+  
+  html += "<button class='sec' style='width:100%; margin-bottom:15px; border:1px dashed var(--accent); color:var(--accent);' onclick='addDummyHive()'>➕ Fiktív Teszt-Kaptár generálása</button>";
+  html += "<div id='hive-list' style='margin-top:10px;'><i>Adatbázis betöltése...</i></div>";
+  html += "</div>";
+
+  html += "<script>"
+          "function loadHives() {"
+          "  fetch('/api/hives/list').then(r=>r.json()).then(data=>{"
+          "    let h = '<table style=\"width:100%; text-align:left; font-size:13px; border-collapse:collapse;\">';"
+          "    h += '<tr><th style=\"border-bottom:1px solid #444; padding:5px;\">ID</th><th style=\"border-bottom:1px solid #444; padding:5px;\">Anya</th><th style=\"border-bottom:1px solid #444; padding:5px;\">Művelet</th></tr>';"
+          "    if(data.length === 0) { h += '<tr><td colspan=\"3\" style=\"text-align:center; padding:10px;\">Nincs regisztrált kaptár</td></tr>'; }"
+          "    data.forEach(item => {"
+          "      h += '<tr>';"
+          "      h += '<td style=\"padding:5px;\"><b>' + item.id + '</b></td>';"
+          "      h += '<td style=\"padding:5px;\">' + (item.queenVintage || '') + ' ' + (item.queenOrigin || '') + '</td>';"
+          "      h += '<td style=\"padding:5px;\"><button style=\"background:#ef4444; padding:4px 8px; font-size:11px; margin:0;\" onclick=\"deleteHive(\\'' + item.id + '\\')\">Törlés</button></td>';"
+          "      h += '</tr>';"
+          "    });"
+          "    h += '</table>';"
+          "    document.getElementById('hive-list').innerHTML = h;"
+          "  }).catch(e=>{ document.getElementById('hive-list').innerHTML = '<span style=\"color:red;\">Hiba a betöltéskor.</span>'; });"
+          "}"
+          "function addDummyHive() {"
+          "  fetch('/api/hives/add_dummy', {method:'POST'}).then(r=>r.json()).then(d=>{"
+          "    if(d.status==='ok') { loadHives(); }"
+          "  });"
+          "}"
+          "function deleteHive(id) {"
+          "  if(confirm('Biztosan véglegesen törlöd az adatbázisból: ' + id + '?')) {"
+          "    fetch('/api/hives/delete?id=' + id, {method:'POST'}).then(r=>r.json()).then(d=>{"
+          "      if(d.status==='ok') loadHives();"
+          "    });"
+          "  }"
+          "}"
+          "// Oldal betöltésekor automatikusan lekérjük a listát\n"
+          "document.addEventListener('DOMContentLoaded', loadHives);"
+          "</script>";
+
   html += "<form action='/reinit' method='POST'>"
           "<button class='warn'>Modem ujraindit</button></form>";
 
@@ -274,14 +319,11 @@ void handleAtStatus() {
   server.send(302);
 }
 
-// --- ÚJ FÜGGVÉNY JAVÍTVA: Nincs checkPinGuard(), mert a fetch ezt hívja a háttérben ---
 void handleAtStatusSerial() {
-  // 1. Lefuttatjuk a snapshot generálást helyben (ez beletelik 2-3 másodpercbe)
   diagAdd("AT allapot snapshot inditva (Terminalbol kertek)");
   refreshAtStatusSnapshot();
   diagAdd("AT allapot snapshot kesz");
   
-  // 2. Kiírjuk a friss eredményt a terminálra
   Serial.println("\n========== 📡 MODEM AT-STÁTUSZ SNAPSHOT 📡 ==========");
   if (gAtStatusSnapshot.length() > 0) {
     Serial.println(gAtStatusSnapshot);
@@ -313,4 +355,90 @@ void handleReinit() {
   gModemInitRequested = true;
   
   sendWaitPage("Modem Újraindítás", "A modem hardveres és szoftveres újraindítása folyamatban van. A hálózati regisztráció befejezéséig kérlek, várj.", "/", 35);
+}
+
+void handleGetHivesJson() {
+  if (!checkPinGuard()) return;
+  if (!LittleFS.exists("/hives.json")) {
+    server.send(200, "application/json", "[]");
+    return;
+  }
+  File file = LittleFS.open("/hives.json", "r");
+  server.streamFile(file, "application/json");
+  file.close();
+}
+
+void handleDeleteHive() {
+  if (!checkPinGuard()) return;
+  String id = server.arg("id");
+  if (id == "") {
+    server.send(400, "application/json", "{\"status\":\"error\", \"msg\":\"Missing ID\"}");
+    return;
+  }
+
+  DynamicJsonDocument doc(4096);
+  File file = LittleFS.open("/hives.json", "r");
+  if (file) {
+    deserializeJson(doc, file);
+    file.close();
+  } else {
+    server.send(404, "application/json", "{\"status\":\"error\", \"msg\":\"No database\"}");
+    return;
+  }
+
+  JsonArray arr = doc.as<JsonArray>();
+  bool found = false;
+  for (JsonArray::iterator it = arr.begin(); it != arr.end(); ++it) {
+    if ((*it)["id"] == id) {
+      arr.remove(it);
+      found = true;
+      break;
+    }
+  }
+
+  if (found) {
+    File outFile = LittleFS.open("/hives.json", "w");
+    serializeJson(doc, outFile);
+    outFile.close();
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+  } else {
+    server.send(404, "application/json", "{\"status\":\"not_found\"}");
+  }
+}
+
+void handleAddDummyHive() {
+  if (!checkPinGuard()) return;
+
+  DynamicJsonDocument doc(4096);
+  File file = LittleFS.open("/hives.json", "r");
+  if (file) {
+    deserializeJson(doc, file);
+    file.close();
+  } else {
+    doc.to<JsonArray>();
+  }
+  
+  JsonArray arr = doc.as<JsonArray>();
+  JsonObject newHive = arr.createNestedObject();
+  
+  String dummyId = "TEST_" + String(random(1000, 9999));
+  newHive["id"] = dummyId;
+  newHive["queenOrigin"] = "Teszt Anya (Generált)";
+  newHive["queenVintage"] = 2026;
+  
+  // Közeli koordináta a térkép teszteléséhez (47.514600, 19.043500 bázissal + kis random offset)
+  float latOffset = (random(-200, 200) / 100000.0);
+  float lonOffset = (random(-200, 200) / 100000.0);
+  newHive["lat"] = 47.514600 + latOffset;
+  newHive["lon"] = 19.043500 + lonOffset;
+  newHive["boxes"] = 3;
+  
+  JsonArray tags = newHive.createNestedArray("nfcTags");
+  tags.add("DUMMY_TAG_1");
+
+  File outFile = LittleFS.open("/hives.json", "w");
+  serializeJson(doc, outFile);
+  outFile.close();
+
+  server.send(200, "application/json", "{\"status\":\"ok\", \"id\":\"" + dummyId + "\"}");
 }

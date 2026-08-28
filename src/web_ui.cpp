@@ -111,6 +111,9 @@ extern void handleAtStatus();
 extern void handleExpertPost();
 extern void handleExpertReset();
 extern void handleExpertFullReset();
+extern void handleGetHivesJson();
+extern void handleDeleteHive();
+extern void handleAddDummyHive();
 
 // --- Kaptár regisztráció ---
 
@@ -390,6 +393,9 @@ void webBegin() {
   server.on("/expertreset", HTTP_POST, handleExpertReset);
   server.on("/expertfullreset", HTTP_POST, handleExpertFullReset);
   server.on("/api/atstatus_serial", HTTP_GET, handleAtStatusSerial);
+  server.on("/api/hives/list", HTTP_GET, handleGetHivesJson);
+  server.on("/api/hives/delete", HTTP_POST, handleDeleteHive);
+  server.on("/api/hives/add_dummy", HTTP_POST, handleAddDummyHive);
   
   // --- Statikus fájlok kiszolgálása a LittleFS-ből ---
 

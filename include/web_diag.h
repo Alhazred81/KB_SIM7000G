@@ -12,7 +12,9 @@ void handleAtStatus();
 void handleModemStatus();
 void handleReinit();
 
-
+void handleGetHivesJson();
+void handleDeleteHive();
+void handleAddDummyHive();
 void handleAtStatusSerial(); 
 
 #endif
