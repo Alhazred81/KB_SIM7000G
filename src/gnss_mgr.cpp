@@ -1,6 +1,11 @@
 //gnss_mgr.cpp
 
 #include "gnss_mgr.h"
+#include "time_mgr.h"
+#include "modem_mgr.h"
+
+// 1. A VÁLTOZÓ TÉNYLEGES LÉTREHOZÁSA (Nincs extern!)
+PreciseSurvey gSurvey;
 
 unsigned long gLastGnssPoll = 0;
 uint8_t gGnssPollStep = 0;
@@ -8,8 +13,6 @@ uint8_t gPosReportDays = 0;
 
 static float lastLoggedLat = 0.0;
 static float lastLoggedLon = 0.0;
-
-
 
 void gnssLoadAssist() {
   if(EEPROM.read(ADDR_GNSS_ASSIST_FLAG) == MAGIC_BYTE) {
@@ -24,11 +27,9 @@ void gnssLoadAssist() {
   }
 }
 
-// 1. MÓDOSÍTOTT MENTŐ FÜGGVÉNY
 void gnssSaveAssist(float lat, float lon, float hdop) {
   if(lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
 
-  // Szűrő: HDOP ellenőrzés és mozgás detektálás (kb. 2 méter)
   float deltaLat = abs(lat - lastLoggedLat);
   float deltaLon = abs(lon - lastLoggedLon);
   
@@ -46,11 +47,6 @@ void gnssSaveAssist(float lat, float lon, float hdop) {
   EEPROM.commit();
 }
 
-// 2. MÓDOSÍTOTT GNSSPOLLPOSITION (A hívásnál adjuk át a HDOP-t)
-// Keresd meg a gnssPollPosition-ban ezt a sort:
-// gnssSaveAssist(gGnss.lat, gGnss.lon);
-// ...és cseréld erre:
-
 String gnssReceiverStatusText() {
   if(!gGnss.enabled) return "Kikapcsolva";
   if(gGnss.fix) return "Bekapcsolva, fix van";
@@ -66,30 +62,22 @@ String gnssCompassDir(float course) {
 }
 
 void gnssStart() {
-  // 1. GPS antenna aktív tápellátásának engedélyezése (kritikus a legtöbb SIM7000 / T-SIM7000 panelen!)
   modem.sendAT("+SGPIO=0,4,1,1"); 
   modem.waitResponse(1000L);
   
-  // 2. GNSS alrendszer indítási szekvenciája
   modem.sendAT("+CGNSPWR=0"); modem.waitResponse(1000L); yield();
   delay(300); yield();
   modem.sendAT("+CGNSPWR=1"); modem.waitResponse(2000L); yield();
   delay(500); yield();
   
-  // 3. Konfiguráció: GPS + GLONASS + BeiDou + Galileo engedélyezése
   modem.sendAT("+CGNSMOD=1,1,1,1");
   modem.waitResponse(1000L);
 
-  // --- ÚJ: Idő és pozíció átadása a GNSS-nek (A-GPS / Assist) ---
-  // Ha van érvényes NTP időnk és mentett koordinátánk, átlökjük a GPS-nek, hogy azonnal tudja hol és mikor van.
   if (gTime.synced) {
-    // Itt beállíthatjuk a modem belső óráját vagy közvetlenül injektálhatjuk a GNSS-nek, 
-    // de a legfontosabb, hogy a +CGNSSTIME parancs szinkronizálja a GPS vevőt.
+    // NTP szinkron logika helye
   }
   
-  // Ha van assist koordináta, beállítjuk kiindulópontként (latitude, longitude, altitude)
   if (!isnan(gGnss.assistLat) && !isnan(gGnss.assistLon)) {
-    // AT+CGNSGPS=lat,lon,alt parancs segít a hidegindítás drasztikus gyorsításában
     String assistCmd = "AT+CGNSGPS=1," + String(gGnss.assistLat, 6) + "," + String(gGnss.assistLon, 6) + ",0";
     modem.sendAT(assistCmd);
     modem.waitResponse(2000L);
@@ -110,16 +98,6 @@ void gnssStop() {
   Serial.println(F("[GNSS] Leallitva."));
 }
 
-// +CGNSINF valasz formatuma (SIMCom hivatalos GNSS Application Note alapjan):
-// index: 0=run,1=fix,2=UTC,3=lat,4=lon,5=alt,6=speed,7=course,8=fixmode,
-//        9=reserved1,10=HDOP,11=PDOP,12=VDOP,13=reserved2,
-//        14=GPS Satellites in View, 15=GNSS Satellites Used (OSSZESITETT!),
-//        16=GLONASS Satellites Used, 17=reserved3, 18=C/N0 max, 19=HPA, 20=VPA
-// Pelda (hivatalos dokumentaciobol):
-// +CGNSINF: 1,1,20171103022632.000,31.222067,121.354368,34.700,0.00,0.0,1,,1.1,1.4,0.9,,21,6,,,45,,
-// FONTOS: a 15. mezo NEM tiszta GPS-hasznalt szam, hanem az OSSZES rendszer
-// (GPS+GLONASS+BEIDOU egyutt) hasznalt muholdjainak osszege - korabban ezt
-// tevesen "csak GPS"-kent kezeltuk, emiatt tunt ugy hogy csak GPS latszik.
 void gnssPollPosition() {
   modem.sendAT("+CGNSINF");
   if(modem.waitResponse(800L, GF("+CGNSINF:")) != 1){
@@ -165,7 +143,6 @@ void gnssPollPosition() {
     gGnss.satUsed = f[15].length() ? f[15].toInt() : 0;
     gGnss.lastGoodFix = millis();
 
-    // Itt hívjuk a javított függvényt a HDOP-vel!
     gnssSaveAssist(gGnss.lat, gGnss.lon, gGnss.hdop);
 
     String utc = f[2];
@@ -179,45 +156,28 @@ void gnssPollPosition() {
 }
 
 void updateGnssAssist(float lat, float lon, float hdop) {
-    // 1. Ha jó a HDOP és a változás minimális, csak frissítjük a memóriát, de nem logolunk
     bool isStable = (hdop < 2.0 && abs(lat - lastLoggedLat) < 0.00001 && abs(lon - lastLoggedLon) < 0.00001);
     
     if (!isStable) {
-        // Itt történik a tényleges mentés/logolás
         Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f\n", lat, lon);
         lastLoggedLat = lat;
         lastLoggedLon = lon;
     }
-    
-    // ... a többi GNSS logika ...
 }
 
 void logGnssPosition(float lat, float lon, float hdop) {
-    // 1. STABILITÁS ELLENŐRZÉSE:
-    // Csak akkor logolunk, ha:
-    // - A HDOP "jó" (pl. < 2.5) 
-    // - ÉS a pozíció érdemben változott (legalább 1-2 métert)
-    
     float deltaLat = abs(lat - lastLoggedLat);
     float deltaLon = abs(lon - lastLoggedLon);
     
     if (hdop < 2.5 && deltaLat < 0.00002 && deltaLon < 0.00002) {
-        // Ha a fix stabil és nem mozdult érdemben, NE logoljunk.
         return; 
     }
 
-    // 2. HA ELTÉRÉS VAN:
-    // Frissítjük a referencia pontokat és logolunk
     Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f (HDOP: %.1f)\n", lat, lon, hdop);
     lastLoggedLat = lat;
     lastLoggedLon = lon;
 }
-// +CGNSSINFO valasz formatuma (SIMCom hivatalos dokumentacio alapjan):
-// mode,GPS-SVs,GLONASS-SVs,BEIDOU-SVs,lat,N/S,lon,E/W,date,time,alt,speed,course,PDOP,HDOP,VDOP
-// Pelda: +CGNSSINFO: 2,06,03,00,3426.693019,S,15051.184731,E,170521,034216.0,46.5,0.0,0.0,1.2,0.9,0.9
-// FONTOS: nincs kulon Galileo mezo ebben a valaszban - a SIM7000 firmware
-// ezt nem adja vissza AT+CGNSSINFO-val, csak nyers NMEA adatbol lenne
-// kinyerheto (amit ez a kod nem olvas), ezert a Galileo mezo mindig "n/a" marad.
+
 void gnssPollExtendedSats() {
   modem.sendAT("+CGNSSINFO");
   if(modem.waitResponse(700L, GF("+CGNSSINFO:")) != 1){
@@ -240,12 +200,11 @@ void gnssPollExtendedSats() {
       pv = i+1;
     }
   }
-  // Legalabb a mode+GPS+GLONASS+BEIDOU mezoknek meg kell lenniuk
   if(gi >= 4) {
     gGnss.satGPS = g[1].length() ? g[1].toInt() : -1;
     gGnss.satGLO = g[2].length() ? g[2].toInt() : -1;
     gGnss.satBDS = g[3].length() ? g[3].toInt() : -1;
-    gGnss.satGAL = -1; // ez a parancs nem adja vissza, marad n/a
+    gGnss.satGAL = -1; 
     gGnss.satTotalView = (gGnss.satGPS>=0?gGnss.satGPS:0)
                         + (gGnss.satGLO>=0?gGnss.satGLO:0)
                         + (gGnss.satBDS>=0?gGnss.satBDS:0);
@@ -273,6 +232,10 @@ void gnssPollAntenna() {
 void gnssLoop() {
   if(!gGnss.enabled) return;
   if(gModem.callActive) return;
+  
+  // 2. PRECÍZIÓS BEMÉRÉS FUTTATÁSA
+  preciseSurveyLoop();
+
   if(millis() - gLastGnssPoll < GNSS_POLL_INTERVAL_MS) return;
   gLastGnssPoll = millis();
   gGnss.lastPoll = millis();
@@ -294,4 +257,53 @@ void gnssSaveConfig(uint8_t days) {
   gPosReportDays = days;
   EEPROM.write(ADDR_POS_DAYS, days);
   EEPROM.commit();
+}
+
+// 3. JAVÍTOTT AT PARANCS A TINYGSM SZINTAXISÁVAL
+void startPreciseSurvey() {
+  gSurvey.active = true;
+  gSurvey.startTime = millis();
+  gSurvey.sampleCount = 0;
+  gSurvey.latSum = 0.0;
+  gSurvey.lonSum = 0.0;
+  gSurvey.bestHdop = 99.9;
+  gSurvey.finalLat = 0.0;
+  gSurvey.finalLon = 0.0;
+  
+  modem.sendAT("+CGNSPWR=1"); 
+  modem.waitResponse(1000L);
+  Serial.println("[GNSS] Precíziós kaptár-bemérés elindítva (30s átlagolás)...");
+}
+
+void preciseSurveyLoop() {
+  if (!gSurvey.active) return;
+
+  unsigned long elapsed = millis() - gSurvey.startTime;
+  
+  if (elapsed > gSurvey.durationMs) {
+    gSurvey.active = false;
+    if (gSurvey.sampleCount > 0) {
+      gSurvey.finalLat = gSurvey.latSum / gSurvey.sampleCount;
+      gSurvey.finalLon = gSurvey.lonSum / gSurvey.sampleCount;
+      Serial.printf("[GNSS] Bemérés kész! Pozíció: %.6f, %.6f (Minták: %d, HDOP: %.1f)\n", 
+          gSurvey.finalLat, gSurvey.finalLon, gSurvey.sampleCount, gSurvey.bestHdop);
+    } else {
+      Serial.println("[GNSS] Bemérés sikertelen: nem érkezett érvényes fix.");
+    }
+    return;
+  }
+
+  if (gGnss.fix && gGnss.lat != 0.0 && gGnss.lat != gSurvey.finalLat) {
+    static double lastAddedLat = 0.0;
+    if (gGnss.lat != lastAddedLat) {
+      gSurvey.latSum += gGnss.lat;
+      gSurvey.lonSum += gGnss.lon;
+      gSurvey.sampleCount++;
+      lastAddedLat = gGnss.lat;
+      
+      if (gGnss.hdop < gSurvey.bestHdop) {
+        gSurvey.bestHdop = gGnss.hdop;
+      }
+    }
+  }
 }

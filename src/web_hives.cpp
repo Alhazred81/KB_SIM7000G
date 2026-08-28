@@ -1,12 +1,21 @@
+// web_hives.cpp
+
 #include <Arduino.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include "gnss_mgr.h"
 #include "web_hives.h"
 #include "web_common.h"
 
 extern WebServer server;
 extern bool checkPinGuard();
 
+// Itt hozzuk létre a regisztrációs állapotgépet (a struct a .h fájlban van!)
+HiveRegistrationContext gRegCtx;
+
+// =================================================================================
+// KAPTÁRAK FŐOLDAL / TÉRKÉP NÉZET
+// =================================================================================
 void handleHives() {
   if (!checkPinGuard()) return;
 
@@ -143,4 +152,233 @@ void handleHives() {
 
   html += htmlFoot();
   server.send(200, "text/html", html);
+}
+
+// =================================================================================
+// KAPTÁR REGISZTRÁCIÓS VARÁZSLÓ HANDLEREK
+// =================================================================================
+
+// 1. LÉPÉS: Indítás és Ismeretlen kaptárak listája
+void handleRegStart() {
+  if (!checkPinGuard()) return;
+  
+  // Varázsló alaphelyzetbe állítása
+  gRegCtx.active = true;
+  gRegCtx.totalBoxes = 0;
+  gRegCtx.queenOrigin = "";
+  gRegCtx.queenVintage = 0;
+  gRegCtx.finalLat = 0.0;
+  gRegCtx.finalLon = 0.0;
+
+  String html = htmlHead("Új Kaptár", "0");
+  html += "<div class='card'>";
+  html += "<h2>Új kaptár regisztrálása</h2>";
+  html += "<p style='font-size:13px; color:var(--txt2);'>Válaszd ki az észlelt, de még regisztrálatlan eszközt a listából!</p>";
+  
+  // Itt valójában az ESP-NOW által látott MAC címeket kellene listázni. 
+  // Most tesztadatokkal töltjük fel:
+  html += "<form action='/reg/nfc' method='GET'>";
+  html += "<select name='hiveId' style='width:100%; padding:10px; margin-bottom:15px; border-radius:8px;'>";
+  html += "<option value='KAPTAR_A1B2'>Ismeretlen (MAC: A1:B2:C3...) - Jel: -65dBm</option>";
+  html += "<option value='KAPTAR_C3D4'>Ismeretlen (MAC: C3:D4:E5...) - Jel: -78dBm</option>";
+  html += "</select>";
+  
+  html += "<button type='submit' style='width:100%; padding:12px;'>Tovább (NFC olvasás) ➡️</button>";
+  html += "</form>";
+  html += "<br><button class='sec' style='width:100%;' onclick=\"location.href='/'\">Mégse</button>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+// 2. LÉPÉS: NFC Olvasás a kiválasztott kaptárhoz
+void handleRegNfc() {
+  if (!checkPinGuard()) return;
+  
+  if (server.hasArg("hiveId")) {
+    gRegCtx.hiveId = server.arg("hiveId");
+  }
+
+  String html = htmlHead("NFC Olvasás", "0");
+  html += "<div class='card' style='text-align:center;'>";
+  html += "<h2>📡 Fiók NFC azonosítása</h2>";
+  html += "<p>Érintsd az olvasóhoz a(z) <b>" + String(gRegCtx.totalBoxes + 1) + ". fiók</b> NFC tagjét!</p>";
+  
+  // Ideiglenes: szimuláljuk az NFC olvasást egy gombbal.
+  String dummyUid = "UID_" + String(random(1000, 9999));
+  html += "<form action='/reg/queen' method='POST'>";
+  html += "<input type='hidden' name='nfc_uid' value='" + dummyUid + "'>";
+  html += "<div style='height:100px; display:flex; align-items:center; justify-content:center; border:2px dashed var(--accent); border-radius:12px; margin:20px 0;'>";
+  html += "<button type='submit' style='background:transparent; border:none; color:var(--accent); font-weight:bold; font-size:16px; width:100%; height:100%;'>[ TESZT: Sikeres olvasás szimulálása ]</button>";
+  html += "</div>";
+  html += "</form>";
+  
+  html += "<button class='sec' style='width:100%;' onclick=\"location.href='/reg/cancel'\">Megszakítás</button>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+// 3. LÉPÉS: Anya adatai és iteráció
+void handleRegQueen() {
+  if (!checkPinGuard()) return;
+  
+  if (server.hasArg("nfc_uid") && gRegCtx.totalBoxes < 10) {
+    gRegCtx.nfcUids[gRegCtx.totalBoxes] = server.arg("nfc_uid");
+    gRegCtx.totalBoxes++;
+  }
+
+  String html = htmlHead("Anya Adatai", "0");
+  html += "<div class='card'>";
+  html += "<h2>👑 Anya adatai</h2>";
+  html += "<p style='font-size:12px;'>Eddig regisztrált fiókok ezen a kaptáron: <b>" + String(gRegCtx.totalBoxes) + " db</b></p>";
+  
+  html += "<form action='/reg/survey' method='POST'>";
+  
+  html += "<label>Anya származása:</label>";
+  html += "<select name='origin' style='width:100%; padding:10px; margin-bottom:15px; border-radius:8px;'>";
+  html += "<option value='Saját nevelés'>Saját nevelés</option>";
+  html += "<option value='Vásárolt'>Vásárolt</option>";
+  html += "<option value='Rajbefogás'>Rajbefogás</option>";
+  html += "<option value='Ismeretlen'>Ismeretlen</option>";
+  html += "</select>";
+
+  html += "<label>Évjárat (szín):</label>";
+  html += "<select name='vintage' style='width:100%; padding:10px; margin-bottom:20px; border-radius:8px;'>";
+  html += "<option value='2024'>2024 (Zöld)</option>";
+  html += "<option value='2025'>2025 (Kék)</option>";
+  html += "<option value='2026'>2026 (Fehér)</option>";
+  html += "<option value='2027'>2027 (Sárga)</option>";
+  html += "<option value='2028'>2028 (Piros)</option>";
+  html += "</select>";
+
+  html += "<button type='submit' name='action' value='add_box' class='sec' style='width:100%; margin-bottom:10px;'>➕ Még egy fiók olvasása</button>";
+  html += "<button type='submit' name='action' value='finish' style='width:100%;'>Tovább a Helymeghatározáshoz 📍</button>";
+  
+  html += "</form>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+// 4. LÉPÉS: Precíziós Bemérés Indítása és Várakozás
+void handleRegSurvey() {
+  if (!checkPinGuard()) return;
+
+  if (server.hasArg("action")) {
+    if (server.arg("action") == "add_box") {
+      server.sendHeader("Location", "/reg/nfc", true);
+      server.send(302, "text/plain", "");
+      return;
+    } else {
+      gRegCtx.queenOrigin = server.arg("origin");
+      gRegCtx.queenVintage = server.arg("vintage").toInt();
+    }
+  }
+
+  startPreciseSurvey();
+
+  String html = htmlHead("Bemérés", "0");
+  html += "<div class='card' style='text-align:center;'>";
+  html += "<h2>📍 Kaptár Bemérése</h2>";
+  html += "<p>Helyezd a telefont / vezérlőt a kaptár tetejére, és <b>ne mozdítsd meg!</b></p>";
+  
+  html += "<div style='font-size:36px; font-weight:bold; color:var(--accent); margin:20px 0;' id='countdown'>30</div>";
+  html += "<div id='status-text' style='font-size:12px; color:var(--txt2);'>GNSS műholdak keresése...</div>";
+  
+  html += "<script>"
+          "let timer = setInterval(function() {"
+          "  fetch('/api/survey_status').then(r => r.json()).then(data => {"
+          "    let remaining = Math.round((data.duration - data.elapsed) / 1000);"
+          "    if(remaining < 0) remaining = 0;"
+          "    document.getElementById('countdown').innerText = remaining;"
+          "    document.getElementById('status-text').innerText = 'Minták száma: ' + data.samples + ' | HDOP: ' + data.hdop;"
+          "    if(!data.active) {"
+          "      clearInterval(timer);"
+          "      window.location.href = '/reg/summary';"
+          "    }"
+          "  });"
+          "}, 1000);"
+          "</script>";
+
+  html += "<br><button class='sec' style='width:100%;' onclick=\"location.href='/reg/cancel'\">Megszakítás</button>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+void handleApiSurveyStatus() {
+  if (!checkPinGuard()) return;
+  
+  String json = "{";
+  json += "\"active\":" + String(gSurvey.active ? "true" : "false") + ",";
+  json += "\"elapsed\":" + String(millis() - gSurvey.startTime) + ",";
+  json += "\"duration\":" + String(gSurvey.durationMs) + ",";
+  json += "\"samples\":" + String(gSurvey.sampleCount) + ",";
+  json += "\"hdop\":" + String(gSurvey.bestHdop);
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
+// 5. LÉPÉS: Összegzés és Véglegesítés
+void handleRegSummary() {
+  if (!checkPinGuard()) return;
+  
+  gRegCtx.finalLat = gSurvey.finalLat;
+  gRegCtx.finalLon = gSurvey.finalLon;
+
+  String html = htmlHead("Összegzés", "0");
+  html += "<div class='card'>";
+  html += "<h2>✅ Regisztráció Összegzése</h2>";
+  
+  html += "<div style='background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:15px; font-size:13px;'>";
+  html += "<p><b>Kaptár ID:</b> " + gRegCtx.hiveId + "</p>";
+  html += "<p><b>Fiókok száma:</b> " + String(gRegCtx.totalBoxes) + " db</p>";
+  html += "<p><b>Anya:</b> " + gRegCtx.queenOrigin + " (" + String(gRegCtx.queenVintage) + ")</p>";
+  if(gRegCtx.finalLat != 0.0) {
+    html += "<p><b>Pozíció:</b> <span style='color:#22c55e;'>Sikeres bemérés!</span><br>(" + String(gRegCtx.finalLat, 6) + ", " + String(gRegCtx.finalLon, 6) + ")</p>";
+  } else {
+    html += "<p><b>Pozíció:</b> <span style='color:#ef4444;'>Nem sikerült pozíciót fogni.</span></p>";
+  }
+  html += "</div>";
+
+  html += "<form action='/reg/save' method='POST'>";
+  html += "<button type='submit' style='width:100%; background:#22c55e; margin-bottom:10px;'>OK - Végleges Mentés</button>";
+  html += "</form>";
+  html += "<button class='sec' style='width:100%;' onclick=\"location.href='/reg/cancel'\">Mégse (Eldobás)</button>";
+  
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+// 6. LÉPÉS: Végleges Mentés Művelet
+void handleRegSave() {
+  if (!checkPinGuard()) return;
+  
+  Serial.println("[REG] --- ÚJ KAPTÁR MENTÉSE ---");
+  Serial.println("ID: " + gRegCtx.hiveId);
+  Serial.println("Anya: " + gRegCtx.queenOrigin + " " + String(gRegCtx.queenVintage));
+  Serial.println("Fiókok: " + String(gRegCtx.totalBoxes));
+  Serial.printf("GPS: %.6f, %.6f\n", gRegCtx.finalLat, gRegCtx.finalLon);
+  
+  gRegCtx.active = false;
+
+  String html = htmlHead("Siker", "0");
+  html += "<div class='card' style='text-align:center;'>";
+  html += "<h2>🎉 Sikeres Regisztráció!</h2>";
+  html += "<p>A kaptár adatai és pontos helyzete mentve.</p>";
+  html += "<br><button style='width:100%;' onclick=\"location.href='/'\">Vissza a Műszerfalra</button>";
+  html += "</div>";
+  html += htmlFoot();
+  server.send(200, "text/html", html);
+}
+
+// Mégse művelet
+void handleRegCancel() {
+  if (!checkPinGuard()) return;
+  gRegCtx.active = false;
+  gSurvey.active = false;
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
 }

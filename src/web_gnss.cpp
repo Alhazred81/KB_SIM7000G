@@ -238,7 +238,7 @@ void handleGnssAssist() {
   if(lat < -90 || lat > 90 || lon < -180 || lon > 180) {
     diagAdd("GNSS koordinata HIBA: ervenytelen tartomany");
   } else {
-    gnssSaveAssist(lat, lon);
+    gnssSaveAssist(lat, lon, 1.0);
     diagAdd("GNSS kiindulo koordinata mentve: " + String(lat, 6) + ", " + String(lon, 6));
   }
   server.sendHeader("Location","/gnss");

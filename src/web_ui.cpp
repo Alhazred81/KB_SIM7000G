@@ -112,6 +112,18 @@ extern void handleExpertPost();
 extern void handleExpertReset();
 extern void handleExpertFullReset();
 
+// --- Kaptár regisztráció ---
+
+// --- Kaptárkezelés --- blokkba:
+extern void handleRegStart();
+extern void handleRegNfc();
+extern void handleRegQueen();
+extern void handleRegSurvey();
+extern void handleApiSurveyStatus();
+extern void handleRegSummary();
+extern void handleRegSave();
+extern void handleRegCancel();
+
 
 // =================================================================================
 // HELYI HANDLER FÜGGVÉNYEK
@@ -380,6 +392,16 @@ void webBegin() {
   server.on("/api/atstatus_serial", HTTP_GET, handleAtStatusSerial);
   
   // --- Statikus fájlok kiszolgálása a LittleFS-ből ---
+
+  server.on("/reg/start", handleRegStart);
+  server.on("/reg/nfc", handleRegNfc);
+  server.on("/reg/queen", HTTP_POST, handleRegQueen);
+  server.on("/reg/survey", HTTP_POST, handleRegSurvey);
+  server.on("/api/survey_status", HTTP_GET, handleApiSurveyStatus);
+  server.on("/reg/summary", HTTP_GET, handleRegSummary);
+  server.on("/reg/save", HTTP_POST, handleRegSave);
+  server.on("/reg/cancel", HTTP_GET, handleRegCancel);
+
   server.serveStatic("/", LittleFS, "/");
 
   server.begin();
