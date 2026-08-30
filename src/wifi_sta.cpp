@@ -61,7 +61,6 @@ void wifiStaLoop() {
     uint8_t currentChannel = WiFi.channel();
     Serial.printf("[WIFISTA] Aktiv csatorna STA mod utan: %d\n", currentChannel);
     
-    // ESP-NOW indítása az új router csatornán
     initEspNowGateway(currentChannel);
     
     ntpStart();
@@ -76,14 +75,13 @@ void wifiStaLoop() {
     Serial.println(F("[WIFISTA] Csatlakozas idotullepes, vissza AP modba."));
     gSta.mode = NetMode::STA_FAILED;
     gSta.lastError = "Nem sikerult csatlakozni (" + gSta.targetSSID +
-                      ") - idotullepes vagy hibas jelszo.";
+                     ") - idotullepes vagy hibas jelszo.";
     gSta.lastAttempt = millis();
 
     WiFi.disconnect(true);
     WiFi.mode(WIFI_AP);
     startAP();
     
-    // ESP-NOW indítása vissza az AP csatornán
     initEspNowGateway(gApChannel);
   }
 }
@@ -125,3 +123,39 @@ void wifiStaWatchdog() {
     initEspNowGateway(gApChannel);
   }
 }
+
+String loadApSSID() {
+  String ssid = "";
+  for (int i = 0; i < 32; i++) {
+    char c = EEPROM.read(ADDR_AP_SSID + i);
+    if (c == 0 || c == 255) break;
+    ssid += c;
+  }
+  return ssid;
+}
+
+void saveApSSID(const String& ssid) {
+  for (int i = 0; i < 32; i++) {
+    if (i < ssid.length()) {
+      EEPROM.write(ADDR_AP_SSID + i, ssid[i]);
+    } else {
+      EEPROM.write(ADDR_AP_SSID + i, 0);
+    }
+  }
+  EEPROM.commit();
+}
+
+void saveApConfig(const String& ssid, const String& pass, uint8_t channel, bool apHide) {
+  for (int i = 0; i < 32; i++) {
+    EEPROM.write(ADDR_AP_SSID + i, i < ssid.length() ? ssid[i] : 0);
+    EEPROM.write(ADDR_AP_PASS + i, i < pass.length() ? pass[i] : 0);
+  }
+  EEPROM.write(ADDR_CHANNEL, channel);
+  EEPROM.write(ADDR_AP_HIDE, apHide ? 1 : 0);
+  EEPROM.commit();
+}
+
+bool loadApHide() {
+  return EEPROM.read(ADDR_AP_HIDE) == 1;
+}
+

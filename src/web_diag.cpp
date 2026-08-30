@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include <WebServer.h>
 #include <WiFi.h> 
+#include "espnow.h"
 #include "web_diag.h"
 #include "web_common.h"
 #include "modem_mgr.h"
@@ -287,6 +288,29 @@ void handleDiag() {
           "document.addEventListener('DOMContentLoaded', loadHives);"
           "</script>";
 
+  // --- ESP-NOW TESZT ABLAK ---
+  html += "<div class='card wide'>";
+  html += "<h2>📡 ESP-NOW Forgalom Tesztelő</h2>";
+  html += "<p class='hint'>Itt láthatod a beérkező csomagokat. A <b>[X s]</b> a szerver ideje (ebből látod a Deep Sleep hosszát), az <b>Ébrenlét</b> pedig a monitor boot idejét mutatja (ebből látszik az akkufogyasztás).</p>";
+  
+  html += "<div style='display:flex; gap:10px;'>";
+  html += "<button class='sec' onclick='fetchEspNowLog()' style='flex:1;'>🔄 Frissítés</button>";
+  html += "<button class='warn' onclick='fetch(\"/api/espnow_clear\").then(()=>fetchEspNowLog())' style='flex:1;'>🗑 Napló Törlése</button>";
+  html += "</div>";
+  
+  html += "<div class='diag' id='espnowBox' style='min-height: 120px; margin-top: 10px; font-size:12px; white-space:pre-wrap;'>Várakozás az adatokra...</div>";
+  html += "</div>";
+
+  html += "<script>"
+          "function fetchEspNowLog() {"
+          "  fetch('/api/espnow_log').then(r=>r.text()).then(txt => {"
+          "    document.getElementById('espnowBox').innerText = txt ? txt : '(Üres - még nem érkezett csomag)'; "
+          "  });"
+          "}"
+          "setInterval(fetchEspNowLog, 3000);" // 3 másodpercenként automatikusan frissít
+          "document.addEventListener('DOMContentLoaded', fetchEspNowLog);"
+          "</script>";
+
   html += "<form action='/reinit' method='POST'>"
           "<button class='warn'>Modem ujraindit</button></form>";
 
@@ -426,7 +450,7 @@ void handleAddDummyHive() {
   newHive["queenOrigin"] = "Teszt Anya (Generált)";
   newHive["queenVintage"] = 2026;
   
-  // Közeli koordináta a térkép teszteléséhez (47.514600, 19.043500 bázissal + kis random offset)
+  // Közeli koordináta a térkép teszteléséhez
   float latOffset = (random(-200, 200) / 100000.0);
   float lonOffset = (random(-200, 200) / 100000.0);
   newHive["lat"] = 47.514600 + latOffset;
@@ -441,4 +465,15 @@ void handleAddDummyHive() {
   outFile.close();
 
   server.send(200, "application/json", "{\"status\":\"ok\", \"id\":\"" + dummyId + "\"}");
+}
+
+void handleApiEspNowLog() {
+  if (!checkPinGuard()) return;
+  server.send(200, "text/plain", getEspNowLog());
+}
+
+void handleApiEspNowClear() {
+  if (!checkPinGuard()) return;
+  clearEspNowLog();
+  server.send(200, "text/plain", "OK");
 }

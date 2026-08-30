@@ -28,23 +28,24 @@ void gnssLoadAssist() {
 }
 
 void gnssSaveAssist(float lat, float lon, float hdop) {
-  if(lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
-
-  float deltaLat = abs(lat - lastLoggedLat);
-  float deltaLon = abs(lon - lastLoggedLon);
-  
-  if (!(hdop < 2.5 && deltaLat < 0.00002 && deltaLon < 0.00002)) {
-      Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f (HDOP: %.1f)\n", lat, lon, hdop);
-      lastLoggedLat = lat;
-      lastLoggedLon = lon;
+  // --- ÚJ LAKAT ---
+  static bool alreadySavedThisBoot = false;
+  if (alreadySavedThisBoot) {
+    return; // Ebben a bekapcsolási ciklusban már mentettünk, nem írjuk feleslegesen a memóriát!
   }
+  alreadySavedThisBoot = true;
+  // ---------------
 
+  // gGnss.assistSaved = true;  <-- EZT A SORT TÖRÖLTÜK!
   gGnss.assistLat = lat;
   gGnss.assistLon = lon;
+
   EEPROM.write(ADDR_GNSS_ASSIST_FLAG, MAGIC_BYTE);
-  EEPROM.put(ADDR_GNSS_ASSIST_LAT, gGnss.assistLat);
-  EEPROM.put(ADDR_GNSS_ASSIST_LON, gGnss.assistLon);
+  EEPROM.put(ADDR_GNSS_ASSIST_LAT, lat);
+  EEPROM.put(ADDR_GNSS_ASSIST_LON, lon);
   EEPROM.commit();
+
+  Serial.printf("[GNSS] Kiindulo koordinata mentve: %.6f, %.6f (HDOP: %.1f)\n", lat, lon, hdop);
 }
 
 String gnssReceiverStatusText() {

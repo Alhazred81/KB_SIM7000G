@@ -20,6 +20,8 @@ struct WifiStaState {
 extern WifiStaState gSta;
 
 void startAP();
+String loadApSSID();
+void saveApSSID(const String& ssid);
 
 struct ScannedNet {
   String ssid;
@@ -38,3 +40,6 @@ void wifiStaLoop();
 void wifiStaTryAutoConnect();
 void wifiStaDisconnect();
 void wifiStaWatchdog();
+
+void saveApConfig(const String& ssid, const String& pass, uint8_t channel, bool hide);
+bool loadApHide();

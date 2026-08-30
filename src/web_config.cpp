@@ -59,42 +59,56 @@ void handleCfg() {
   }
   html += "</div>";
 
-  // --- 2. WiFi AP beállítások ---
-  html += "<div class='card wide'><h2>WiFi AP (Saját hálózat)</h2>"
-          "<form action='/savewifi' method='POST'>"
-          "<label>SSID vege (elotag: KB-teszt-)</label>"
-          "<input type='text' name='ssid' value='";
-  String macPart = gApSSID.length()>9 ? gApSSID.substring(9) : "";
+  // --- 2. WiFi AP & ESP-NOW beállítások ---
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  html += "<div class='card wide'><h2>WiFi AP & ESP-NOW Paraméterek</h2>";
+  html += "<form action='/savewifi' method='POST'>";
+  html += "<label>SSID vege (elotag: KB-teszt-)</label>";
+  html += "<input type='text' name='ssid' value='";
+  String macPart = gApSSID.length() > 9 ? gApSSID.substring(9) : "";
   html += macPart;
-  html += "' maxlength='20'>"
-          "<label>Jelszo (min. 8 kar.)</label>"
-          "<input type='password' name='pass' value='' placeholder='ures = valtozatlan' maxlength='31'>"
-          "<label>Csatorna</label>"
-          "<select name='ch'>";
-  for(int i=1; i<=13; i++){
-    html += "<option value='" + String(i) + "'" + (i==gApChannel ? " selected" : "") + ">Csatorna " + String(i) + "</option>";
+  html += "' maxlength='20'>";
+  html += "<label>Jelszo (min. 8 kar.)</label>";
+  html += "<input type='password' name='pass' value='' placeholder='ures = valtozatlan' maxlength='31'>";
+  html += "<label>Csatorna (AP és ESP-NOW közös)</label>";
+  html += "<select name='ch'>";
+  for(int i = 1; i <= 13; i++){
+    html += "<option value='" + String(i) + "'" + (i == gApChannel ? " selected" : "") + ">Csatorna " + String(i) + "</option>";
   }
-  html += "</select><button>Mentes & ujraindulas</button></form></div>";
+  html += "</select>";
+
+  // ESP-NOW információs blokk külön sorokká bontva
+  html += "<div style='margin-top:15px; padding-top:10px; border-top:1px solid var(--border); font-size:13px;'>";
+  html += "<span class='k'>ESP-NOW Státusz:</span> <span class='v g'>Aktív (Csatorna: " + String(gApChannel) + ")</span><br>";
+  html += "<span class='k'>Gateway MAC-cím:</span> <span class='v' style='font-family:monospace;'>" + String(macStr) + "</span><br>";
+  html += "<span class='hint'>Az ESP-NOW közvetlen protokoll; a fenti MAC-címre küldik a rádiós csomagokat a távoli eszközök jelszó nélkül.</span>";
+  html += "</div>";
+
+  html += "<button style='margin-top:15px;'>Mentes & ujraindulas</button></form></div>";
 
   // --- 3. Ntfy Beállítások ---
-  html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>"
-          "<form action='/save-ntfy' method='POST'>"
-          "<label>ntfy Szerver</label>"
-          "<input type='text' name='ntfy_server' value='" + htmlEscape(gNtfyServer) + "'>"
-          "<label>Topic neve (egyedi azonosító)</label>"
-          "<input type='text' name='ntfy_topic' value='" + htmlEscape(gNtfyTopic) + "' required>"
-          "<label>Eszközazonosító (Név, pl. szerver-1)</label>"
-          "<input type='text' name='ntfy_nickname' value='" + htmlEscape(gNtfyNickname) + "'>"
-          
-          "<div style='display:flex; align-items:center; justify-content:space-between; margin-top:15px; padding-top:10px; border-top:1px solid var(--border);'>"
-          "<span>Rendszerindulási tesztüzenet</span>"
-          "<label class='sens-toggle' style='--sens-color:var(--ok); margin:0;'>"
-          "<input type='checkbox' name='ntfy_startup'" + String(gNtfyStartupMsg ? " checked" : "") + ">"
-          "<span class='slider'></span></label>"
-          "</div>"
-          
-          "<button style='margin-top:20px'>ntfy Mentés</button>"
-          "</form></div>";
+  html += "<div class='card wide'><h2>ntfy Beállítások (Üzenetcsatorna)</h2>";
+  html += "<form action='/save-ntfy' method='POST'>";
+  html += "<label>ntfy Szerver</label>";
+  html += "<input type='text' name='ntfy_server' value='" + htmlEscape(gNtfyServer) + "'>";
+  html += "<label>Topic neve (egyedi azonosító)</label>";
+  html += "<input type='text' name='ntfy_topic' value='" + htmlEscape(gNtfyTopic) + "' required>";
+  html += "<label>Eszközazonosító (Név, pl. szerver-1)</label>";
+  html += "<input type='text' name='ntfy_nickname' value='" + htmlEscape(gNtfyNickname) + "'>";
+  
+  html += "<div style='display:flex; align-items:center; justify-content:space-between; margin-top:15px; padding-top:10px; border-top:1px solid var(--border);'>";
+  html += "<span>Rendszerindulási tesztüzenet</span>";
+  html += "<label class='sens-toggle' style='--sens-color:var(--ok); margin:0;'>";
+  html += "<input type='checkbox' name='ntfy_startup'" + String(gNtfyStartupMsg ? " checked" : "") + ">";
+  html += "<span class='slider'></span></label>";
+  html += "</div>";
+  
+  html += "<button style='margin-top:20px'>ntfy Mentés</button>";
+  html += "</form></div>";
 
   // --- 4. Időjárás és Vihar Riasztás Beállítások ---
   Preferences prefsW;
@@ -105,60 +119,60 @@ void handleCfg() {
   int wPrio  = prefsW.getInt("w_prio", 5);
   prefsW.end();
 
-  html += "<div class='card wide'><h2>Időjárás & Vihar Riasztás Beállítások</h2>"
-          "<form action='/saveweathercfg' method='POST'>"
-          
-          "<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; padding-top:10px; border-top:1px solid var(--border);'>"
-          "<span>YR/Meteo JSON nyers kiírás a terminálra</span>"
-          "<label class='sens-toggle' style='--sens-color:var(--prim); margin:0;'>"
-          "<input type='checkbox' name='w_debug'" + String(wDebug ? " checked" : "") + ">"
-          "<span class='slider'></span></label>"
-          "</div>"
+  html += "<div class='card wide'><h2>Időjárás & Vihar Riasztás Beállítások</h2>";
+  html += "<form action='/saveweathercfg' method='POST'>";
+  
+  html += "<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; padding-top:10px; border-top:1px solid var(--border);'>";
+  html += "<span>YR/Meteo JSON nyers kiírás a terminálra</span>";
+  html += "<label class='sens-toggle' style='--sens-color:var(--prim); margin:0;'>";
+  html += "<input type='checkbox' name='w_debug'" + String(wDebug ? " checked" : "") + ">";
+  html += "<span class='slider'></span></label>";
+  html += "</div>";
 
-          "<label>Esőintenzitás küszöb riasztáshoz (mm/h)</label>"
-          "<input type='number' step='0.5' name='w_rain' value='" + String(wRain, 1) + "' style='width:100%; margin-bottom:15px;'>"
+  html += "<label>Esőintenzitás küszöb riasztáshoz (mm/h)</label>";
+  html += "<input type='number' step='0.5' name='w_rain' value='" + String(wRain, 1) + "' style='width:100%; margin-bottom:15px;'>";
 
-          "<label>Szélerősség küszöb riasztáshoz (km/h)</label>"
-          "<input type='number' name='w_wind' value='" + String(wWind) + "' style='width:100%; margin-bottom:15px;'>"
+  html += "<label>Szélerősség küszöb riasztáshoz (km/h)</label>";
+  html += "<input type='number' name='w_wind' value='" + String(wWind) + "' style='width:100%; margin-bottom:15px;'>";
 
-          "<label>Riasztási ntfy prioritás (1 - alacsony, 5 - vészhelyzet)</label>"
-          "<select name='w_prio' style='width:100%; margin-bottom:20px; padding:8px; background:#0a0a18; color:var(--txt); border:1px solid var(--border); border-radius:6px;'>"
-          "<option value='1'" + String(wPrio == 1 ? " selected" : "") + ">1 - Min (Alacsony)</option>"
-          "<option value='2'" + String(wPrio == 2 ? " selected" : "") + ">2 - Low</option>"
-          "<option value='3'" + String(wPrio == 3 ? " selected" : "") + ">3 - Default (Normál)</option>"
-          "<option value='4'" + String(wPrio == 4 ? " selected" : "") + ">4 - High (Magas)</option>"
-          "<option value='5'" + String(wPrio == 5 ? " selected" : "") + ">5 - Urgent (Vészhelyzet)</option>"
-          "</select>"
+  html += "<label>Riasztási ntfy prioritás (1 - alacsony, 5 - vészhelyzet)</label>";
+  html += "<select name='w_prio' style='width:100%; margin-bottom:20px; padding:8px; background:#0a0a18; color:var(--txt); border:1px solid var(--border); border-radius:6px;'>";
+  html += "<option value='1'" + String(wPrio == 1 ? " selected" : "") + ">1 - Min (Alacsony)</option>";
+  html += "<option value='2'" + String(wPrio == 2 ? " selected" : "") + ">2 - Low</option>";
+  html += "<option value='3'" + String(wPrio == 3 ? " selected" : "") + ">3 - Default (Normál)</option>";
+  html += "<option value='4'" + String(wPrio == 4 ? " selected" : "") + ">4 - High (Magas)</option>";
+  html += "<option value='5'" + String(wPrio == 5 ? " selected" : "") + ">5 - Urgent (Vészhelyzet)</option>";
+  html += "</select>";
 
-          "<button>Időjárás Beállítások Mentése</button>"
-          "</form>"
+  html += "<button>Időjárás Beállítások Mentése</button>";
+  html += "</form>";
 
-          "<hr style='border:0; border-top:1px solid var(--border); margin:20px 0;'>"
-          "<button type='button' class='sec' onclick='sendWeatherTest()' id='testAlertBtn' style='width:100%;'>⚡ Vihar Riasztás Tesztküldése</button>"
-          "<div id='testAlertRes' class='msg' style='display:none; margin-top:10px;'></div>"
-          
-          "<script>"
-          "function sendWeatherTest() {"
-          "  var btn = document.getElementById('testAlertBtn');"
-          "  var res = document.getElementById('testAlertRes');"
-          "  btn.disabled = true; btn.innerText = 'Küldés...';"
-          "  fetch('/testweatheralert', {method: 'POST'})"
-          "    .then(r => r.text())"
-          "    .then(txt => {"
-          "      res.style.display = 'block';"
-          "      if(txt === 'ok') {"
-          "        res.className = 'msg ok'; res.innerText = 'Teszt riasztás sikeresen elküldve ntfy-on!';"
-          "      } else {"
-          "        res.className = 'msg err'; res.innerText = 'Hiba a küldéskor: ' + txt;"
-          "      }"
-          "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';"
-          "    }).catch(err => {"
-          "      res.style.display = 'block'; res.className = 'msg err'; res.innerText = 'Hálózati hiba.';"
-          "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';"
-          "    });"
-          "}"
-          "</script>"
-          "</div>";
+  html += "<hr style='border:0; border-top:1px solid var(--border); margin:20px 0;'>";
+  html += "<button type='button' class='sec' onclick='sendWeatherTest()' id='testAlertBtn' style='width:100%;'>⚡ Vihar Riasztás Tesztküldése</button>";
+  html += "<div id='testAlertRes' class='msg' style='display:none; margin-top:10px;'></div>";
+  
+  html += "<script>";
+  html += "function sendWeatherTest() {";
+  html += "  var btn = document.getElementById('testAlertBtn');";
+  html += "  var res = document.getElementById('testAlertRes');";
+  html += "  btn.disabled = true; btn.innerText = 'Küldés...';";
+  html += "  fetch('/testweatheralert', {method: 'POST'})";
+  html += "    .then(r => r.text())";
+  html += "    .then(txt => {";
+  html += "      res.style.display = 'block';";
+  html += "      if(txt === 'ok') {";
+  html += "        res.className = 'msg ok'; res.innerText = 'Teszt riasztás sikeresen elküldve ntfy-on!';";
+  html += "      } else {";
+  html += "        res.className = 'msg err'; res.innerText = 'Hiba a küldéskor: ' + txt;";
+  html += "      }";
+  html += "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';";
+  html += "    }).catch(err => {";
+  html += "      res.style.display = 'block'; res.className = 'msg err'; res.innerText = 'Hálózati hiba.';";
+  html += "      btn.disabled = false; btn.innerText = '⚡ Vihar Riasztás Tesztküldése';";
+  html += "    });";
+  html += "}";
+  html += "</script>";
+  html += "</div>";
 
   html += htmlFoot();
   server.send(200, "text/html", html);
@@ -211,7 +225,7 @@ void handleStaDisconnect() {
   server.send(302, "text/plain", "");
 }
 
-// --- Mentési Handler-ek (Változatlanok) ---
+// --- Mentési Handler-ek ---
 
 void handleSaveWeatherCfg() {
   Preferences prefsW;
@@ -227,9 +241,26 @@ void handleSaveWeatherCfg() {
 }
 
 void handleSaveWifi() {
-  if (server.hasArg("ssid") && server.hasArg("pass")) {
-    gApSSID = "KB-teszt-" + server.arg("ssid");
+  if (server.hasArg("ssid")) {
+    String suffix = server.arg("ssid");
+    gApSSID = "KB-teszt-" + suffix;
+    
+    String newPass = server.arg("pass");
+    if (newPass.length() == 0) {
+      newPass = loadApPass(); 
+    }
+    
+    if (server.hasArg("ch")) {
+      gApChannel = server.arg("ch").toInt();
+    }
+    
+    bool currentHide = loadApHide(); 
+
+    saveApConfig(gApSSID, newPass, gApChannel, currentHide);
+    
+    diagAdd("AP beállítások mentve: SSID=" + gApSSID + ", Csatorna=" + String(gApChannel));
   }
+  
   server.sendHeader("Location", "/cfg", true);
   server.send(302, "text/plain", "");
 }

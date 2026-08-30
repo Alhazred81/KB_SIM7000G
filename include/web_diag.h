@@ -17,4 +17,7 @@ void handleDeleteHive();
 void handleAddDummyHive();
 void handleAtStatusSerial(); 
 
+void handleApiEspNowLog();
+void handleApiEspNowClear();
+
 #endif

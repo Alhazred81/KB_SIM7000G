@@ -22,8 +22,23 @@ body {
 }
 
 .wrap {
-  max-width: 600px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-width: 1400px;
   margin: 0 auto;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .wrap {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.wrap > h1,
+.card.wide {
+  grid-column: 1 / -1;
 }
 
 h1 {
@@ -46,14 +61,11 @@ h2 {
 .card {
   background: var(--card-bg);
   padding: 16px;
+  box-sizing: border-box;
   margin-bottom: 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.card.wide {
-  grid-column: 1 / -1;
 }
 
 .row {
@@ -71,11 +83,9 @@ h2 {
 .k {
   color: var(--txt2);
 }
-
 .v {
   font-weight: bold;
 }
-
 .v.g {
   color: var(--ok);
 }
@@ -105,20 +115,16 @@ button,
 button:hover {
   background: var(--accent-hover);
 }
-
 button.sec {
   background: #374151;
   color: var(--txt);
 }
-
 button.sec:hover {
   background: #4b5563;
 }
-
 button.danger {
   background: var(--err);
 }
-
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -195,33 +201,8 @@ label {
   border: 1px solid var(--border);
 }
 
-/* Reszponzív mozaik elrendezés (grid) */
-.wrap {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-/* Reszponzív automata mozaik elrendezés */
-.wrap {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* A főcím és a széles elemek mindig átfogják az összes oszlopot */
-.wrap > h1,
-.card.wide {
-  grid-column: 1 / -1;
-}
-
-/* --- Szenzor Skála (Gauge) --- */
 .gauge-container {
-  padding: 30px 15px 40px 15px; /* Hely a lebegő dobozoknak */
+  padding: 30px 15px 40px 15px;
   margin: 15px 0;
   font-family: sans-serif;
   position: relative;
@@ -241,7 +222,6 @@ label {
 .gauge-track {
   height: 12px;
   border-radius: 6px;
-  /* Hőmérséklet jellegű színátmenet: Kék -> Zöld -> Piros */
   background: linear-gradient(to right, #2196f3 0%, #4caf50 50%, #f44336 100%);
   position: relative;
 }
@@ -251,15 +231,12 @@ label {
   display: flex;
   flex-direction: column;
   align-items: center;
-  transform: translateX(-50%); /* Középre igazítja a dobozt a megadott %-hoz */
+  transform: translateX(-50%);
 }
 
-/* Felső markerek (Min, Max, Aktuális) */
 .gauge-marker.top {
   bottom: 100%;
 }
-
-/* Alsó markerek (Átlag/Medián) */
 .gauge-marker.bottom {
   top: 100%;
 }
@@ -283,7 +260,6 @@ label {
   background: #2a2a4a;
 }
 
-/* A vonalak, amik a doboztól a sávig érnek */
 .gauge-line {
   width: 2px;
   background: var(--border);
@@ -293,12 +269,10 @@ label {
   height: 15px;
   margin-top: 2px;
 }
-
 .gauge-marker.bottom .gauge-line {
   height: 15px;
   margin-bottom: 2px;
 }
-
 .gauge-marker.current .gauge-line {
   width: 3px;
   background: var(--ok);

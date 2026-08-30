@@ -32,8 +32,8 @@ String loadReportConfig();
 HardwareSerial modemSerial(1);
 TinyGsm        modem(modemSerial);
 bool gStartupNtfySent = false;
+bool gDelayedWifiStarted = false;
 
-// NtfyClient példányosítása
 NtfyClient     ntfy(modemSerial, "kb_sim7000g_balazs", "ntfy.sh");
 
 WebServer      server(80);
@@ -79,9 +79,17 @@ String macSuffix() {
 }
 
 void startAP() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(gApSSID.c_str(), gApPass.c_str(), gApChannel);
-  Serial.println("[AP] SSID: " + gApSSID);
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.mode(WIFI_AP_STA);
+  } else {
+    WiFi.mode(WIFI_AP);
+  }
+  
+  bool hideAp = loadApHide(); 
+  
+  WiFi.softAP(gApSSID.c_str(), gApPass.c_str(), gApChannel, hideAp);
+  
+  Serial.println("[AP] SSID: " + gApSSID + (hideAp ? " (Rejtett)" : ""));
   Serial.println("[AP] IP:   " + WiFi.softAPIP().toString());
   Serial.println("[AP] CH:   " + String(gApChannel));
 }
@@ -213,7 +221,7 @@ void handleSerial() {
   }
   else if(cmd == "reinit") {
     Serial.println("Modem ujraindit...");
-    gModemInitRequested = true; // Lecserélve flagre, hogy ne blokkoljon azonnal
+    gModemInitRequested = true;
   }
   else if(cmd == "diag") {
     Serial.println("=== DIAG LOG ===");
@@ -240,26 +248,18 @@ void handleSerial() {
   }
 }
 
-// ====================================================================
-// SETUP: Villámgyors indulás, csak a kommunikáció és a UI áll fel
-// ====================================================================
 void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println(F("\n=== KB SIM7000G indul ==="));
   
-  // 1. Kommunikációs vonalak és memóriák
-  // 1024 bájtos buffer a nagy JSON fájloknak!
   modemSerial.setRxBufferSize(1024); 
-  // Ha a config.h-ban definiáltad a MODEM_RX és TX pineket, ide beírhatod a begin-be, 
-  // ha a modemInit() csinálja, akkor ez csak előkészítés
   
   if (!LittleFS.begin(true)) Serial.println("LittleFS MOUNT HIBA");
   else Serial.println("LittleFS OK");
 
   EEPROM.begin(EEPROM_SIZE);
 
-  // 2. Beállítások betöltése
   loadLedConfig();
   ledPinReinit();
   gnssLoadAssist();
@@ -273,42 +273,49 @@ void setup() {
   gApChannel = EEPROM.read(ADDR_CHANNEL);
   if(gApChannel < 1 || gApChannel > 13) gApChannel = DEFAULT_CHANNEL;
 
-  // 3. UI és Webszerver elindítása (azonnali elérés)
-  WiFi.mode(WIFI_AP);
-  gApSSID = "KB-teszt-" + macSuffix();
+  gApSSID = loadApSSID();
+  if (gApSSID.length() == 0) {
+    gApSSID = "KB-teszt-" + macSuffix(); // Egységesítve a helyes előtagra
+  }
+
+  diagAdd("Wi-Fi tisztítása...");
+  WiFi.disconnect(true, true);
+  
   startAP();
   dnsServer.start(53, "*", WiFi.softAPIP());
   webBegin();
 
-  wifiStaTryAutoConnect();
   initServerEspNow();
   ntfy.setDebugStream(&Serial);
 
-  // 4. Modulok inicializálása (csak változókat állítanak, nem blokkolnak)
   ntpStart();
   weatherInit();
 
-  // 5. Modem fizikai ébresztése (Power gomb)
   gModem.bootTime = millis();
   modemPowerOn(); 
   
-  diagAdd("Rendszer UI elindult. Hatterfolyamatok ebresztese...");
+  diagAdd("Rendszer UI elindult. Modem ebresztese...");
   Serial.println(F("=== Kész. Ird 'help' a serial parancsokhoz. ==="));
-  
-  // A modem hálózatkeresése majd a loop()-ban indul el!
 }
 
-// ====================================================================
-// LOOP: Az állapotok karmestere
-// ====================================================================
 void loop() {
-  // A Webszerver SOSEM fagyhat le
   if(gSta.mode == NetMode::AP || gSta.mode == NetMode::STA_CONNECTING) {
     dnsServer.processNextRequest();
   }
   server.handleClient();
 
-  // 1. KÉSLELTETETT MODEM INDÍTÁS (Nem a setup()-ban tartjuk fel a procit)
+  if (!gDelayedWifiStarted && gModem.ready) {
+    static unsigned long modemStableTime = 0;
+    if (modemStableTime == 0) modemStableTime = millis();
+
+    if (millis() - modemStableTime > 5000) {
+      gDelayedWifiStarted = true;
+      diagAdd("Hardver stabilizálódott. Otthoni Wi-Fi keresése a háttérben...");
+      WiFi.setSleep(false);
+      wifiStaTryAutoConnect();
+    }
+  }
+
   static bool startupPhaseDone = false;
   if (!startupPhaseDone && millis() - gModem.bootTime > 2500) {
     startupPhaseDone = true;
@@ -316,10 +323,9 @@ void loop() {
     gModemInitRequested = true; 
   }
 
-  // Ha kértek újraindítást vagy ez az első boot trigger
   if(gModemInitRequested) {
     gModemInitRequested = false;
-    bool ok = modemInit(); // Feltételezve, hogy lélegezteti a webszervert
+    bool ok = modemInit();
     diagAdd(ok ? "Modem init OK" : "Modem init HIBA: " + gModem.lastError);
     if(ok) {
       gnssStart(); 
@@ -327,11 +333,9 @@ void loop() {
     }
   }
 
-  // Rendszeres feladatok
   monitorCall();
   updateModemStats();
   
-  // Modulok "okos" loopjai (maguktól tudják, hogy várniuk kell-e)
   gnssLoop();
   ntpLoop();
   updateLED();
@@ -340,16 +344,14 @@ void loop() {
   wifiStaWatchdog();
   smsInboxLoop();
   sensorsLoop();
-  backgroundTaskLoop(); // Itt indul a weatherUpdate(), ha a gTime.synced == true
+  backgroundTaskLoop();
 
-  // Időzített riport
   static unsigned long lastReportCheck = 0;
   if (millis() - lastReportCheck > 15000) { 
     lastReportCheck = millis();
     checkAndSendScheduledReport();
   }
   
-  // Startup Ntfy értesítés (Megvárja az időszinkront és az aktív netet!)
   if (!gStartupNtfySent && gTime.synced && gData.active) {
     gStartupNtfySent = true; 
     if (gNtfyStartupMsg) {
@@ -361,7 +363,6 @@ void loop() {
     }
   }
 
-  // SMS Küldés
   if(gSmsSendRequested) {
     gSmsSendRequested = false;
     gSmsSendInProgress = true;

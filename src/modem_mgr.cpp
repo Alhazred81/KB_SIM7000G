@@ -41,7 +41,7 @@ void modemPowerOn() {
   diagAddWithTimestamp(F("[MODEM] Nem valaszol, PWRKEY pulzus kuldese..."));
   digitalWrite(MODEM_PWRKEY, LOW);  delay(1200); yield(); 
   digitalWrite(MODEM_PWRKEY, HIGH);                     
-  diagAddWithTimestamp(F("[MODEM] Varakozas a felallasra..."));
+  diagAddWithTimestamp(F("[MODEM] Varakozas az indulasra..."));
   delay(5000); yield();  
   gModem.powered = true;
 }

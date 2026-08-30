@@ -396,6 +396,8 @@ void webBegin() {
   server.on("/api/hives/list", HTTP_GET, handleGetHivesJson);
   server.on("/api/hives/delete", HTTP_POST, handleDeleteHive);
   server.on("/api/hives/add_dummy", HTTP_POST, handleAddDummyHive);
+  server.on("/api/espnow_log", HTTP_GET, handleApiEspNowLog);
+  server.on("/api/espnow_clear", HTTP_GET, handleApiEspNowClear);
   
   // --- Statikus fájlok kiszolgálása a LittleFS-ből ---
 
